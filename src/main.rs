@@ -18,6 +18,9 @@ fn main() {
 
     println!("Displaying {} users", results.len());
     for user in results {
-        println!("{}, {}", user.id, user.email);
+        println!(
+            "{}, {} created at: {}",
+            user.id, user.email, user.created_at
+        );
     }
 }
