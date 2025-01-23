@@ -1,26 +1,54 @@
 pub mod db;
+pub mod graphql;
 pub mod schema;
 
-use diesel::prelude::*;
+use crate::db::conn::get_db_pool;
+use crate::graphql::schema::*;
 
-use self::db::models::user::*;
-use db::conn::establish_connection;
+use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
+use async_graphql_axum::GraphQL;
+use axum::{
+    http::Method,
+    response::{Html, IntoResponse},
+    routing::get,
+    Router,
+};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
-fn main() {
-    use self::schema::users::dsl::*;
+#[tokio::main]
+async fn main() -> Result<(), ()> {
+    // Initialize connection (pool) to DB
+    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
+        .data(get_db_pool())
+        .finish();
 
-    let connection = &mut establish_connection();
-    let results = users
-        .limit(5)
-        .select(User::as_select())
-        .load(connection)
-        .expect("Error loading users");
-
-    println!("Displaying {} users", results.len());
-    for user in results {
-        println!(
-            "{}, {} created at: {}",
-            user.id, user.email, user.created_at
+    let router = Router::new()
+        .route("/", get(hello_world))
+        .route(
+            "/playground",
+            get(graphiql).post_service(GraphQL::new(schema)),
+        )
+        .layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::predicate(|_, _| true))
+                .allow_methods([Method::GET, Method::POST]),
         );
-    }
+
+    let listener = tokio::net::TcpListener::bind("localhost:8000")
+        .await
+        .unwrap();
+
+    axum::serve(listener, router.into_make_service())
+        .await
+        .unwrap();
+
+    Ok(())
+}
+
+async fn graphiql() -> impl IntoResponse {
+    Html(GraphiQLSource::build().endpoint("/playground").finish())
+}
+
+async fn hello_world() -> &'static str {
+    "Hello world from axum server!"
 }
