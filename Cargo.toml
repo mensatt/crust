@@ -1,0 +1,21 @@
+[package]
+name = "crust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# For GraphQL stuff
+async-graphql = "7.0.14"
+async-graphql-axum = "7.0.14"
+# For HTTP Stuff
+axum = "0.8.1"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5.2", features = ["cors"] }
+# For SQL Stuff
+uuid = { version = "1.10.0", features = ["v4", "serde"] }
+chrono = "0.4.39"
+diesel = { version = "2.2.6", features = ["postgres", "uuid", "chrono"] }
+# Config Stuff
+config = "0.15.6"
+# slab = "0.4.9"
+# futures = "0.3.30"
