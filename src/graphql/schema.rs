@@ -1,5 +1,10 @@
-use crate::db::conn::DbPool;
-use crate::db::models::user::*;
+use crate::db::{
+    conn::DbPool,
+    models::{
+        dish::{CreateDishInput, Dish, DishFilter, UpdateDishInput},
+        user::{NewUser, User},
+    },
+};
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
@@ -18,12 +23,43 @@ impl QueryRoot {
 
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
-        let connection = &mut pool.get().unwrap();
+        let conn = &mut pool.get().unwrap();
 
         let results = users
             .select(User::as_select())
-            .load(&mut *connection)
+            .load(conn)
             .expect("Error loading users");
+        Ok(results)
+    }
+
+    async fn dishes(
+        &self,
+        ctx: &Context<'_>,
+        filter: Option<DishFilter>,
+    ) -> async_graphql::Result<Vec<Dish>> {
+        use crate::schema::dishes;
+        // Get DB conn
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Construct query
+        let mut query = dishes::table.select(Dish::as_select()).into_boxed();
+
+        // Add neccessary clauses depending on present filter values
+        if let Some(f) = filter {
+            if let Some(filter_dishes) = f.dishes {
+                query = query.filter(dishes::id.eq_any(filter_dishes));
+            }
+            if let Some(filter_name_de) = f.name_de {
+                query = query.filter(dishes::name_en.ilike(format!("%{}%", filter_name_de)));
+            }
+            if let Some(filter_name_en) = f.name_en {
+                query = query.filter(dishes::name_en.ilike(format!("%{}%", filter_name_en)));
+            }
+        }
+
+        // Return results
+        let results = query.load(conn).expect("Error loading dishes");
         Ok(results)
     }
 }
@@ -42,7 +78,7 @@ impl MutationRoot {
         use crate::schema::users;
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
-        let connection = &mut pool.get().unwrap();
+        let conn = &mut pool.get().unwrap();
 
         // Hash password
         let salt = SaltString::generate(&mut OsRng);
@@ -65,9 +101,70 @@ impl MutationRoot {
         let results = diesel::insert_into(users::table)
             .values(&new_user)
             .returning(User::as_returning())
-            .get_result(connection)
+            .get_result(conn)
             .expect("Error saving new user");
 
         Ok(results)
+    }
+
+    async fn create_dish(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateDishInput,
+    ) -> async_graphql::Result<Dish> {
+        use crate::schema::dishes;
+
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Construct new dish
+        let new_dish = Dish {
+            id: uuid::Uuid::new_v4(),
+            name_de: input.name_de,
+            name_en: input.name_en,
+        };
+
+        // Add dish
+        let results = diesel::insert_into(dishes::table)
+            .values(&new_dish)
+            .get_result(conn)
+            .expect("Error saving new dish");
+
+        Ok(results)
+    }
+
+    async fn update_dish(
+        &self,
+        ctx: &Context<'_>,
+        input: UpdateDishInput,
+    ) -> async_graphql::Result<Dish> {
+        use crate::schema::dishes;
+
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Create query to update the given dish
+        let query = diesel::update(dishes::table)
+            .filter(dishes::id.eq(input.id))
+            .set(&input);
+
+        // Try to update, map empty changeset to None (instead of Error)
+        let pot_empty_changeset = query
+            .get_result(conn)
+            .optional_empty_changeset()
+            .expect("Error while updating");
+
+        // Get dish from DB if changeset was empty (== no changes should be made to object)
+        let results = pot_empty_changeset.map(Ok).unwrap_or_else(|| {
+            // Fallback query that returns the dish as it is stored in the databse
+            dishes::table
+                .filter(dishes::id.eq(input.id))
+                .select(Dish::as_select())
+                .first(conn)
+        });
+
+        Ok(results?)
     }
 }
