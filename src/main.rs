@@ -18,7 +18,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 #[tokio::main]
 async fn main() -> Result<(), ()> {
     // Initialize connection (pool) to DB
-    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
+    let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
         .data(get_db_pool())
         .finish();
 
