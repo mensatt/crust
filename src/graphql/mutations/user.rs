@@ -2,25 +2,26 @@ use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
 };
-use async_graphql::Context;
+use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::db::{
-    conn::DbPool,
-    models::user::{NewUser, User},
+use crate::{
+    db::{conn::DbPool, models::user::DbUser},
+    graphql::queries::GqlUser,
 };
+
+#[derive(Debug, InputObject)]
+pub struct CreateUserInput {
+    pub email: String,
+    pub password: String,
+}
 
 #[derive(Default)]
 pub struct UserMutations;
 
 #[async_graphql::Object]
 impl UserMutations {
-    async fn create_user(
-        &self,
-        ctx: &Context<'_>,
-        email: String,
-        password: String,
-    ) -> async_graphql::Result<User> {
+    async fn create_user(&self, ctx: &Context<'_>, input: CreateUserInput) -> Result<GqlUser> {
         use crate::schema::users;
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
@@ -34,22 +35,22 @@ impl UserMutations {
 
         // Hash password to PHC string ($argon2id$v=19$...)
         let password_hash = argon2
-            .hash_password(password.as_bytes(), &salt)?
+            .hash_password(input.password.as_bytes(), &salt)?
             .to_string();
 
-        let new_user = NewUser {
+        let new_user = DbUser {
             id: uuid::Uuid::new_v4(),
-            email: &email,
-            password_hash: &password_hash,
+            email: input.email,
+            password_hash,
             created_at: chrono::offset::Utc::now(),
             updated_at: chrono::offset::Utc::now(),
         };
         let results = diesel::insert_into(users::table)
             .values(&new_user)
-            .returning(User::as_returning())
+            .returning(DbUser::as_returning())
             .get_result(conn)
             .expect("Error saving new user");
 
-        Ok(results)
+        Ok(results.into())
     }
 }

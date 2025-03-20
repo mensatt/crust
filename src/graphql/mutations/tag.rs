@@ -1,17 +1,44 @@
-use async_graphql::{Context, Result};
+use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::db::{
-    conn::DbPool,
-    models::tag::{CreateTagInput, Tag, UpdateTagInput},
+use crate::{
+    db::{
+        conn::DbPool,
+        models::tag::{DbTag, TagPriority},
+    },
+    graphql::queries::GqlTag,
 };
+
+#[derive(Debug, InputObject, Insertable)]
+#[diesel(table_name = crate::schema::tags)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct CreateTagInput {
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    pub short_name: Option<String>,
+    pub priority: TagPriority,
+    pub is_allergy: Option<bool>,
+}
+
+#[derive(Debug, InputObject, AsChangeset)]
+#[diesel(table_name = crate::schema::tags)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct UpdateTagInput {
+    pub key: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub short_name: Option<String>,
+    pub priority: Option<TagPriority>,
+    pub is_allergy: Option<bool>,
+}
 
 #[derive(Default)]
 pub struct TagMutations;
 
 #[async_graphql::Object]
 impl TagMutations {
-    async fn create_tag(&self, ctx: &Context<'_>, input: CreateTagInput) -> Result<Tag> {
+    async fn create_tag(&self, ctx: &Context<'_>, input: CreateTagInput) -> Result<GqlTag> {
         use crate::schema::tags;
 
         // Get DB connection
@@ -19,15 +46,15 @@ impl TagMutations {
         let conn = &mut pool.get().unwrap();
 
         // Add tag
-        let results = diesel::insert_into(tags::table)
+        let results: DbTag = diesel::insert_into(tags::table)
             .values(&input)
             .get_result(conn)
             .expect("Error saving new tag");
 
-        Ok(results)
+        Ok(results.into())
     }
 
-    async fn update_tag(&self, ctx: &Context<'_>, input: UpdateTagInput) -> Result<Tag> {
+    async fn update_tag(&self, ctx: &Context<'_>, input: UpdateTagInput) -> Result<GqlTag> {
         use crate::schema::tags;
 
         // Get DB connection
@@ -50,10 +77,10 @@ impl TagMutations {
             // Fallback query that returns the tag as it is stored in the databse
             tags::table
                 .filter(tags::key.eq(&input.key))
-                .select(Tag::as_select())
+                .select(DbTag::as_select())
                 .first(conn)
         });
 
-        Ok(results?)
+        Ok(results.map(|db_tag: DbTag| db_tag.into())?)
     }
 }

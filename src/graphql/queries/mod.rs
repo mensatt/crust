@@ -3,7 +3,7 @@ mod location;
 mod tag;
 mod user;
 
-pub use dish::DishQueries;
-pub use location::LocationQueries;
-pub use tag::TagQueries;
-pub use user::UserQueries;
+pub use dish::{DishQueries, GqlDish};
+pub use location::{GqlLocation, LocationQueries};
+pub use tag::{GqlTag, TagQueries};
+pub use user::{GqlUser, UserQueries};

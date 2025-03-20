@@ -1,28 +1,47 @@
-use async_graphql::Context;
+use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
 
-use crate::db::{
-    conn::DbPool,
-    models::dish::{Dish, DishFilter},
-};
+use crate::db::{conn::DbPool, models::dish::DbDish};
+
+#[derive(Debug, SimpleObject)]
+#[graphql(name = "Dish")]
+pub struct GqlDish {
+    pub id: uuid::Uuid,
+    pub name_de: String,
+    pub name_en: Option<String>,
+    // TODO: aliases, reviewData
+}
+
+impl From<DbDish> for GqlDish {
+    fn from(value: DbDish) -> Self {
+        GqlDish {
+            id: value.id,
+            name_de: value.name_de,
+            name_en: value.name_en,
+        }
+    }
+}
+
+#[derive(Debug, InputObject)]
+pub struct DishFilter {
+    pub dishes: Option<Vec<uuid::Uuid>>,
+    pub name_de: Option<String>,
+    pub name_en: Option<String>,
+}
 
 #[derive(Default)]
 pub struct DishQueries;
 
 #[async_graphql::Object]
 impl DishQueries {
-    async fn dishes(
-        &self,
-        ctx: &Context<'_>,
-        filter: Option<DishFilter>,
-    ) -> async_graphql::Result<Vec<Dish>> {
+    async fn dishes(&self, ctx: &Context<'_>, filter: Option<DishFilter>) -> Result<Vec<GqlDish>> {
         use crate::schema::dishes;
         // Get DB conn
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
         // Construct query
-        let mut query = dishes::table.select(Dish::as_select()).into_boxed();
+        let mut query = dishes::table.select(DbDish::as_select()).into_boxed();
 
         // Add neccessary clauses depending on present filter values
         if let Some(f) = filter {
@@ -38,7 +57,7 @@ impl DishQueries {
         }
 
         // Return results
-        let results = query.load(conn).expect("Error loading dishes");
-        Ok(results)
+        let results: Vec<DbDish> = query.load(conn).expect("Error loading dishes");
+        Ok(results.into_iter().map(Into::into).collect())
     }
 }
