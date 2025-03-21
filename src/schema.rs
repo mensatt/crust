@@ -24,6 +24,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    occurrences (id) {
+        id -> Uuid,
+        date -> Timestamptz,
+        kj -> Nullable<Int8>,
+        kcal -> Nullable<Int8>,
+        fat -> Nullable<Int8>,
+        saturated_fat -> Nullable<Int8>,
+        carbohydrates -> Nullable<Int8>,
+        sugar -> Nullable<Int8>,
+        fiber -> Nullable<Int8>,
+        protein -> Nullable<Int8>,
+        salt -> Nullable<Int8>,
+        price_student -> Nullable<Int8>,
+        price_staff -> Nullable<Int8>,
+        price_guest -> Nullable<Int8>,
+        dish -> Uuid,
+        location -> Uuid,
+        not_available_after -> Nullable<Timestamptz>,
+        status -> Varchar,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::TagPriority;
 
@@ -47,4 +70,7 @@ diesel::table! {
     }
 }
 
-diesel::allow_tables_to_appear_in_same_query!(dishes, locations, tags, users,);
+diesel::joinable!(occurrences -> dishes (dish));
+diesel::joinable!(occurrences -> locations (location));
+
+diesel::allow_tables_to_appear_in_same_query!(dishes, locations, occurrences, tags, users,);
