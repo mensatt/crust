@@ -47,6 +47,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    occurrences_tags (occurrence, tag) {
+        occurrence -> Uuid,
+        tag -> Varchar,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::TagPriority;
 
@@ -72,5 +79,14 @@ diesel::table! {
 
 diesel::joinable!(occurrences -> dishes (dish));
 diesel::joinable!(occurrences -> locations (location));
+diesel::joinable!(occurrences_tags -> occurrences (occurrence));
+diesel::joinable!(occurrences_tags -> tags (tag));
 
-diesel::allow_tables_to_appear_in_same_query!(dishes, locations, occurrences, tags, users,);
+diesel::allow_tables_to_appear_in_same_query!(
+    dishes,
+    locations,
+    occurrences,
+    occurrences_tags,
+    tags,
+    users,
+);

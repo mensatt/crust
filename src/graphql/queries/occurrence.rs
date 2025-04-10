@@ -1,7 +1,8 @@
 use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
 
-use crate::schema::{dishes, locations};
+use crate::db::models::tag::DbTag;
+use crate::schema::{dishes, locations, occurrences_tags, tags};
 use crate::{
     db::{
         conn::DbPool,
@@ -38,28 +39,36 @@ pub struct GqlOccurrence {
     // TODO: Add review_data
 }
 
+// Placeholder for mutations (for now)
 impl From<(DbOccurrence, DbLocation, DbDish)> for GqlOccurrence {
-    fn from(value: (DbOccurrence, DbLocation, DbDish)) -> Self {
+    fn from(tuple: (DbOccurrence, DbLocation, DbDish)) -> Self {
+        let (occ, loc, dish) = tuple;
+        (occ, loc, dish, Vec::new()).into()
+    }
+}
+
+impl From<(DbOccurrence, DbLocation, DbDish, Vec<DbTag>)> for GqlOccurrence {
+    fn from((occ, loc, dish, tags): (DbOccurrence, DbLocation, DbDish, Vec<DbTag>)) -> Self {
         GqlOccurrence {
-            id: value.0.id,
-            location: value.1.into(),
-            dish: value.2.into(),
+            id: occ.id,
+            location: loc.into(),
+            dish: dish.into(),
             side_dishes: vec![], // TODO
-            date: value.0.date.date_naive().into(),
-            kj: value.0.kj,
-            kcal: value.0.kcal,
-            fat: value.0.fat,
-            saturated_fat: value.0.saturated_fat,
-            carbohydrates: value.0.carbohydrates,
-            sugar: value.0.sugar,
-            fiber: value.0.fiber,
-            protein: value.0.protein,
-            salt: value.0.salt,
-            price_student: value.0.price_student,
-            price_staff: value.0.price_staff,
-            price_guest: value.0.price_guest,
-            tags: vec![], // TODO
-            not_available_after: value.0.not_available_after.map(Into::into),
+            date: occ.date.date_naive().into(),
+            kj: occ.kj,
+            kcal: occ.kcal,
+            fat: occ.fat,
+            saturated_fat: occ.saturated_fat,
+            carbohydrates: occ.carbohydrates,
+            sugar: occ.sugar,
+            fiber: occ.fiber,
+            protein: occ.protein,
+            salt: occ.salt,
+            price_student: occ.price_student,
+            price_staff: occ.price_staff,
+            price_guest: occ.price_guest,
+            tags: tags.into_iter().map(Into::into).collect(),
+            not_available_after: occ.not_available_after.map(Into::into),
         }
     }
 }
@@ -77,7 +86,7 @@ impl OccurrenceQueries {
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Construct and execute query
+        // Step 1: Get main occurrence with associated location and dish data
         let query = occurrences
             .inner_join(locations::table)
             .inner_join(dishes::table)
@@ -87,13 +96,41 @@ impl OccurrenceQueries {
                 DbDish::as_select(),
             ));
 
-        let results = query
+        let base_data = query
             .load::<(DbOccurrence, DbLocation, DbDish)>(conn)
-            .expect("Error loading occurrences")
+            .expect("Error loading occurrences");
+
+        // TODO: This works (and is reasonably efficient if query contains tags) but GQL resolvers
+        // are the better approach.
+        // NOTE: To avoid N+1 problem use dataloader as described here:
+        // https://async-graphql.github.io/async-graphql/en/dataloader.html
+
+        // Step 2: Collect occurrence ids...
+        let occurrence_ids: Vec<uuid::Uuid> = base_data.iter().map(|(occ, _, _)| occ.id).collect();
+        // ... and fetch all their tag data
+        let tag_joins = occurrences_tags::table
+            .filter(occurrences_tags::occurrence.eq_any(&occurrence_ids))
+            .inner_join(tags::table)
+            .select((occurrences_tags::occurrence, DbTag::as_select()))
+            .load::<(uuid::Uuid, DbTag)>(conn)
+            .expect("Error loading occurrence tags");
+
+        // Step 3: Group the tags together by their occurrence ids
+        use std::collections::HashMap;
+        let mut tags_map: HashMap<uuid::Uuid, Vec<DbTag>> = HashMap::new();
+        for (occurrence_id, tag) in tag_joins {
+            tags_map.entry(occurrence_id).or_default().push(tag);
+        }
+
+        // Step 4: Map to GqlOccurrence with occurrence, location and tag data
+        let gql_occurrences = base_data
             .into_iter()
-            .map(|tuple| tuple.into())
+            .map(|(db_occurrence, db_location, db_dish)| {
+                let tag_vector = tags_map.remove(&db_occurrence.id).unwrap_or_default();
+                (db_occurrence, db_location, db_dish, tag_vector).into()
+            })
             .collect();
 
-        Ok(results)
+        Ok(gql_occurrences)
     }
 }
