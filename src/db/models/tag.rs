@@ -14,8 +14,8 @@ pub struct DbTag {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, async_graphql::Enum, diesel_derive_enum::DbEnum)]
-#[ExistingTypePath = "crate::schema::sql_types::TagPriority"]
-#[DbValueStyle = "UPPERCASE"]
+#[db_enum(existing_type_path = "crate::schema::sql_types::TagPriority")]
+#[db_enum(value_style = "UPPERCASE")]
 pub enum TagPriority {
     HIGH,
     MEDIUM,
