@@ -5,10 +5,9 @@ use argon2::{
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::{
-    db::{conn::DbPool, models::user::DbUser},
-    graphql::queries::GqlUser,
-};
+use crate::db::{conn::DbPool, models::user::DbUser};
+use crate::graphql::queries::GqlUser;
+use crate::schema::users;
 
 #[derive(Debug, InputObject)]
 pub struct CreateUserInput {
@@ -22,7 +21,6 @@ pub struct UserMutations;
 #[async_graphql::Object]
 impl UserMutations {
     async fn create_user(&self, ctx: &Context<'_>, input: CreateUserInput) -> Result<GqlUser> {
-        use crate::schema::users;
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -38,17 +36,19 @@ impl UserMutations {
             .hash_password(input.password.as_bytes(), &salt)?
             .to_string();
 
+        let now = chrono::Utc::now();
         let new_user = DbUser {
             id: uuid::Uuid::new_v4(),
             email: input.email,
             password_hash,
-            created_at: chrono::offset::Utc::now(),
-            updated_at: chrono::offset::Utc::now(),
+            created_at: now,
+            updated_at: now,
         };
+
+        // Add user and return it
         let results = diesel::insert_into(users::table)
             .values(&new_user)
-            .returning(DbUser::as_returning())
-            .get_result(conn)
+            .get_result::<DbUser>(conn)
             .expect("Error saving new user");
 
         Ok(results.into())

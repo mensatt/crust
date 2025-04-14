@@ -93,7 +93,7 @@ impl OccurrenceMutations {
             location: input.location,
             dish: input.dish,
             // Convert given GqlDate into timestamp or use current time as fallback
-            date: input.date.map(Into::into).unwrap_or(chrono::Utc::now()),
+            date: input.date.map(Into::into).unwrap_or_else(chrono::Utc::now),
             kj: input.kj,
             kcal: input.kcal,
             fat: input.fat,
@@ -111,22 +111,13 @@ impl OccurrenceMutations {
             status: "AWAITING_APPROVAL".to_string(),
         };
 
-        // Add occurrence
-        let insert_result: DbOccurrence = diesel::insert_into(occurrences::table)
+        // Add occurrence and return it
+        // NOTE: We cannot simply return the given input as we do not
+        // necessarily know the database defaults for nullable fields.
+        let result = diesel::insert_into(occurrences::table)
             .values(&new_occurrence)
-            .returning(DbOccurrence::as_returning())
-            .get_result(conn)
+            .get_result::<DbOccurrence>(conn)
             .expect("Error saving new occurrence");
-
-        // Query inserted occurrence
-        // NOTE: We cannot simply use the given input as it only contains references for
-        // location, dish, side_dishes and tags.
-        // Also we do not necessarily know the database defaults for nullable fields.
-        let result = occurrences::table
-            .filter(occurrences::id.eq(insert_result.id))
-            .select(DbOccurrence::as_select())
-            .first(conn)
-            .expect("Error loading inserted occurrence");
 
         Ok(result.into())
     }
@@ -140,22 +131,27 @@ impl OccurrenceMutations {
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Convert the input to a changeset
+        // Save occurrence id for later and convert the input to a changeset
+        let occ_id = input.id;
         let changeset: DbOccurrenceChangeset = input.into();
-        // Create query to update the given occurrence
-        diesel::update(occurrences::table)
-            .filter(occurrences::id.eq(input.id))
-            .set(changeset)
-            .execute(conn)
-            .optional_empty_changeset()
-            .expect("Error while updating");
 
-        // Query updated occurrence
-        let result = occurrences::table
-            .filter(occurrences::id.eq(input.id))
-            .select(DbOccurrence::as_select())
-            .first(conn)
-            .expect("Error loading inserted occurrence");
+        // Try to update, map empty changeset to None (instead of Error)
+        let pot_empty_changeset = diesel::update(occurrences::table)
+            .filter(occurrences::id.eq(occ_id))
+            .set(changeset)
+            .get_result::<DbOccurrence>(conn)
+            .optional_empty_changeset()
+            .expect("Error while updating occurrence");
+
+        // Use non-empty changeset if present and fall back to querying otherwise
+        let result = pot_empty_changeset.unwrap_or_else(|| {
+            // Fallback query that returns the occurrence as it is stored in the database
+            occurrences::table
+                .filter(occurrences::id.eq(occ_id))
+                .select(DbOccurrence::as_select())
+                .first(conn)
+                .expect("Unable to get updated occurrence")
+        });
 
         Ok(result.into())
     }
