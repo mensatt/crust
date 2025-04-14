@@ -1,13 +1,12 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::{
-    db::{
-        conn::DbPool,
-        models::tag::{DbTag, TagPriority},
-    },
-    graphql::queries::GqlTag,
+use crate::db::{
+    conn::DbPool,
+    models::tag::{DbTag, TagPriority},
 };
+use crate::graphql::queries::GqlTag;
+use crate::schema::tags;
 
 #[derive(Debug, InputObject, Insertable)]
 #[diesel(table_name = crate::schema::tags)]
@@ -39,13 +38,11 @@ pub struct TagMutations;
 #[async_graphql::Object]
 impl TagMutations {
     async fn create_tag(&self, ctx: &Context<'_>, input: CreateTagInput) -> Result<GqlTag> {
-        use crate::schema::tags;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Add tag
+        // Add tag and return it
         let results: DbTag = diesel::insert_into(tags::table)
             .values(&input)
             .get_result(conn)
@@ -55,32 +52,28 @@ impl TagMutations {
     }
 
     async fn update_tag(&self, ctx: &Context<'_>, input: UpdateTagInput) -> Result<GqlTag> {
-        use crate::schema::tags;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Create query to update the given tag
-        let query = diesel::update(tags::table)
-            .filter(tags::key.eq(&input.key))
-            .set(&input);
-
         // Try to update, map empty changeset to None (instead of Error)
-        let pot_empty_changeset = query
-            .get_result(conn)
+        let pot_empty_changeset = diesel::update(tags::table)
+            .filter(tags::key.eq(&input.key))
+            .set(&input)
+            .get_result::<DbTag>(conn)
             .optional_empty_changeset()
-            .expect("Error while updating");
+            .expect("Error while updating tag");
 
-        // Get tag from DB if changeset was empty (== no changes should be made to object)
-        let results = pot_empty_changeset.map(Ok).unwrap_or_else(|| {
+        // Use non-empty changeset if present and fall back to querying otherwise
+        let result = pot_empty_changeset.unwrap_or_else(|| {
             // Fallback query that returns the tag as it is stored in the databse
             tags::table
                 .filter(tags::key.eq(&input.key))
                 .select(DbTag::as_select())
                 .first(conn)
+                .expect("Unable to get updated tag")
         });
 
-        Ok(results.map(|db_tag: DbTag| db_tag.into())?)
+        Ok(result.into())
     }
 }

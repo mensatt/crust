@@ -3,6 +3,7 @@ use diesel::prelude::*;
 
 use crate::db::{conn::DbPool, models::dish::DbDish};
 use crate::graphql::queries::GqlDish;
+use crate::schema::dishes;
 
 #[derive(Debug, InputObject)]
 pub struct CreateDishInput {
@@ -25,8 +26,6 @@ pub struct DishMutations;
 #[async_graphql::Object]
 impl DishMutations {
     pub async fn create_dish(&self, ctx: &Context<'_>, input: CreateDishInput) -> Result<GqlDish> {
-        use crate::schema::dishes;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -38,7 +37,7 @@ impl DishMutations {
             name_en: input.name_en,
         };
 
-        // Add dish
+        // Add dish and return it
         let results: DbDish = diesel::insert_into(dishes::table)
             .values(&new_dish)
             .get_result(conn)
@@ -48,32 +47,28 @@ impl DishMutations {
     }
 
     async fn update_dish(&self, ctx: &Context<'_>, input: UpdateDishInput) -> Result<GqlDish> {
-        use crate::schema::dishes;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Create query to update the given dish
-        let query = diesel::update(dishes::table)
-            .filter(dishes::id.eq(input.id))
-            .set(&input);
-
         // Try to update, map empty changeset to None (instead of Error)
-        let pot_empty_changeset = query
+        let pot_empty_changeset = diesel::update(dishes::table)
+            .filter(dishes::id.eq(input.id))
+            .set(&input)
             .get_result(conn)
             .optional_empty_changeset()
-            .expect("Error while updating");
+            .expect("Error while updating dish");
 
-        // Get dish from DB if changeset was empty (== no changes should be made to object)
-        let results = pot_empty_changeset.map(Ok).unwrap_or_else(|| {
+        // Use non-empty changeset if present and fall back to querying otherwise
+        let result = pot_empty_changeset.unwrap_or_else(|| {
             // Fallback query that returns the dish as it is stored in the databse
             dishes::table
                 .filter(dishes::id.eq(input.id))
                 .select(DbDish::as_select())
                 .first(conn)
+                .expect("Unable to get updated dish")
         });
 
-        Ok(results.map(|db_dish: DbDish| db_dish.into())?)
+        Ok(result.into())
     }
 }

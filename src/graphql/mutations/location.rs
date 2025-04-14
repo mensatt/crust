@@ -3,6 +3,7 @@ use diesel::prelude::*;
 
 use crate::db::{conn::DbPool, models::location::DbLocation};
 use crate::graphql::queries::GqlLocation;
+use crate::schema::locations;
 
 #[derive(Debug, InputObject, Insertable)]
 #[diesel(table_name = crate::schema::locations)]
@@ -33,17 +34,15 @@ impl LocationMutations {
         ctx: &Context<'_>,
         input: CreateLocationInput,
     ) -> Result<GqlLocation> {
-        use crate::schema::locations;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Add location
+        // Add location and return it
         let results: DbLocation = diesel::insert_into(locations::table)
             .values(&input)
             .get_result(conn)
-            .expect("Error saving new tag");
+            .expect("Error saving new location");
 
         Ok(results.into())
     }
@@ -53,32 +52,28 @@ impl LocationMutations {
         ctx: &Context<'_>,
         input: UpdateLocationInput,
     ) -> Result<GqlLocation> {
-        use crate::schema::locations;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Create query to update the given location
-        let query = diesel::update(locations::table)
-            .filter(locations::id.eq(input.id))
-            .set(&input);
-
         // Try to update, map empty changeset to None (instead of Error)
-        let pot_empty_changeset = query
+        let pot_empty_changeset = diesel::update(locations::table)
+            .filter(locations::id.eq(input.id))
+            .set(&input)
             .get_result(conn)
             .optional_empty_changeset()
-            .expect("Error while updating");
+            .expect("Error while updating location");
 
-        // Get location from DB if changeset was empty (== no changes should be made to object)
-        let results = pot_empty_changeset.map(Ok).unwrap_or_else(|| {
+        // Use non-empty changeset if present and fall back to querying otherwise
+        let result = pot_empty_changeset.unwrap_or_else(|| {
             // Fallback query that returns the location as it is stored in the databse
             locations::table
                 .filter(locations::id.eq(input.id))
                 .select(DbLocation::as_select())
                 .first(conn)
+                .expect("Unable to get updated location")
         });
 
-        Ok(results.map(|db_location| db_location.into())?)
+        Ok(result.into())
     }
 }
