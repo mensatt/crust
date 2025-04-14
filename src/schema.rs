@@ -61,6 +61,19 @@ diesel::table! {
 }
 
 diesel::table! {
+    reviews (id) {
+        id -> Uuid,
+        display_name -> Nullable<Varchar>,
+        stars -> Int8,
+        text -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        accepted_at -> Nullable<Timestamptz>,
+        occurrence -> Uuid,
+    }
+}
+
+diesel::table! {
     use diesel::sql_types::*;
     use super::sql_types::TagPriority;
 
@@ -90,6 +103,7 @@ diesel::joinable!(occurrences_side_dishes -> dishes (dish));
 diesel::joinable!(occurrences_side_dishes -> occurrences (occurrence));
 diesel::joinable!(occurrences_tags -> occurrences (occurrence));
 diesel::joinable!(occurrences_tags -> tags (tag));
+diesel::joinable!(reviews -> occurrences (occurrence));
 
 diesel::allow_tables_to_appear_in_same_query!(
     dishes,
@@ -97,6 +111,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     occurrences,
     occurrences_side_dishes,
     occurrences_tags,
+    reviews,
     tags,
     users,
 );

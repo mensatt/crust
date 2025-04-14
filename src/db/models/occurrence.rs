@@ -1,7 +1,9 @@
 use crate::db::models::{dish::DbDish, location::DbLocation};
 use diesel::prelude::*;
 
-#[derive(Debug, Queryable, Selectable, Insertable, Identifiable, AsChangeset, Associations)]
+#[derive(
+    Debug, Queryable, Selectable, Insertable, Identifiable, AsChangeset, Associations, Clone,
+)]
 #[diesel(belongs_to(DbLocation, foreign_key = location))]
 #[diesel(belongs_to(DbDish, foreign_key = dish))]
 #[diesel(table_name = crate::schema::occurrences)]

@@ -2,7 +2,7 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
 
-use crate::graphql::dataloaders::{DishLoader, LocationLoader, TagLoader, SideDishLoader};
+use crate::graphql::dataloaders::{DishLoader, LocationLoader, SideDishLoader, TagLoader};
 use crate::{
     db::{conn::DbPool, models::occurrence::DbOccurrence},
     graphql::util::{GqlDate, GqlTimestamp},

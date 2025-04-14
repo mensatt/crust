@@ -5,6 +5,7 @@ pub struct Query(
     DishQueries,
     LocationQueries,
     OccurrenceQueries,
+    ReviewQueries,
     TagQueries,
     UserQueries,
 );
@@ -14,6 +15,7 @@ pub struct Mutation(
     DishMutations,
     LocationMutations,
     OccurrenceMutations,
+    ReviewMutations,
     TagMutations,
     UserMutations,
 );

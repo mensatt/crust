@@ -19,14 +19,20 @@ use crate::graphql::schema::*;
 #[tokio::main]
 async fn main() -> Result<(), ()> {
     // Create dataloaders
+    let dish_loader = DataLoader::new(
+        DishLoader {
+            pool: get_db_pool(),
+        },
+        tokio::spawn,
+    );
     let location_loader = DataLoader::new(
         LocationLoader {
             pool: get_db_pool(),
         },
         tokio::spawn,
     );
-    let dish_loader = DataLoader::new(
-        DishLoader {
+    let occurrence_loader = DataLoader::new(
+        OccurrenceLoader {
             pool: get_db_pool(),
         },
         tokio::spawn,
@@ -46,8 +52,9 @@ async fn main() -> Result<(), ()> {
 
     // Create GraphQL schema and add dataloaders and DB pool to its context
     let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
-        .data(location_loader)
         .data(dish_loader)
+        .data(location_loader)
+        .data(occurrence_loader)
         .data(side_dish_loader)
         .data(tag_loader)
         .data(get_db_pool())
