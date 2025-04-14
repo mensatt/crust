@@ -47,6 +47,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    occurrences_side_dishes (occurrence, dish) {
+        occurrence -> Uuid,
+        dish -> Uuid,
+    }
+}
+
+diesel::table! {
     occurrences_tags (occurrence, tag) {
         occurrence -> Uuid,
         tag -> Varchar,
@@ -79,6 +86,8 @@ diesel::table! {
 
 diesel::joinable!(occurrences -> dishes (dish));
 diesel::joinable!(occurrences -> locations (location));
+diesel::joinable!(occurrences_side_dishes -> dishes (dish));
+diesel::joinable!(occurrences_side_dishes -> occurrences (occurrence));
 diesel::joinable!(occurrences_tags -> occurrences (occurrence));
 diesel::joinable!(occurrences_tags -> tags (tag));
 
@@ -86,6 +95,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     dishes,
     locations,
     occurrences,
+    occurrences_side_dishes,
     occurrences_tags,
     tags,
     users,
