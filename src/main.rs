@@ -2,10 +2,7 @@ pub mod db;
 pub mod graphql;
 pub mod schema;
 
-use crate::db::conn::get_db_pool;
-use crate::graphql::schema::*;
-
-use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
+use async_graphql::{dataloader::DataLoader, http::GraphiQLSource, EmptySubscription, Schema};
 use async_graphql_axum::GraphQL;
 use axum::{
     http::Method,
@@ -15,10 +12,37 @@ use axum::{
 };
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
+use crate::db::conn::get_db_pool;
+use crate::graphql::dataloaders::*;
+use crate::graphql::schema::*;
+
 #[tokio::main]
 async fn main() -> Result<(), ()> {
-    // Initialize connection (pool) to DB
+    // Create dataloaders
+    let location_loader = DataLoader::new(
+        LocationLoader {
+            pool: get_db_pool(),
+        },
+        tokio::spawn,
+    );
+    let dish_loader = DataLoader::new(
+        DishLoader {
+            pool: get_db_pool(),
+        },
+        tokio::spawn,
+    );
+    let tag_loader = DataLoader::new(
+        TagLoader {
+            pool: get_db_pool(),
+        },
+        tokio::spawn,
+    );
+
+    // Create GraphQL schema and add dataloaders and DB pool to its context
     let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
+        .data(location_loader)
+        .data(dish_loader)
+        .data(tag_loader)
         .data(get_db_pool())
         .finish();
 

@@ -9,7 +9,7 @@ uuid = "1.10.0"
 chrono = "0.4.39"
 argon2 = "0.5.3"
 # For GraphQL stuff
-async-graphql = { version = "7.0.14", features = ["uuid", "chrono"] }
+async-graphql = { version = "7.0.14", features = ["uuid", "chrono", "dataloader"] }
 async-graphql-axum = "7.0.14"
 # For HTTP Stuff
 axum = "0.8.1"

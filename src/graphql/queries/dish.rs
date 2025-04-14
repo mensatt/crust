@@ -2,6 +2,7 @@ use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
 
 use crate::db::{conn::DbPool, models::dish::DbDish};
+use crate::schema::dishes;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "Dish")]
@@ -35,7 +36,8 @@ pub struct DishQueries;
 #[async_graphql::Object]
 impl DishQueries {
     async fn dishes(&self, ctx: &Context<'_>, filter: Option<DishFilter>) -> Result<Vec<GqlDish>> {
-        use crate::schema::dishes;
+        // NOTE: Using the DishLoader is not beneficial here since (for now) we don't filter on ids
+
         // Get DB conn
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();

@@ -3,14 +3,10 @@ use diesel::prelude::*;
 
 use crate::db::{
     conn::DbPool,
-    models::{
-        dish::DbDish,
-        location::DbLocation,
-        occurrence::{DbOccurrence, DbOccurrenceChangeset},
-    },
+    models::occurrence::{DbOccurrence, DbOccurrenceChangeset},
 };
 use crate::graphql::{queries::GqlOccurrence, util::GqlDate};
-use crate::schema::{dishes, locations};
+use crate::schema::occurrences;
 
 #[derive(Debug, InputObject)]
 pub struct CreateOccurrenceInput {
@@ -88,8 +84,6 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: CreateOccurrenceInput,
     ) -> Result<GqlOccurrence> {
-        use crate::schema::occurrences;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -124,24 +118,17 @@ impl OccurrenceMutations {
             .get_result(conn)
             .expect("Error saving new occurrence");
 
-        // Query inserted occurrence (with dish and location)
-        // TODO: Make more generic to accommodate for side_dishes and tags
-        let query = occurrences::table
-            .inner_join(locations::table)
-            .inner_join(dishes::table)
-            .select((
-                DbOccurrence::as_select(),
-                DbLocation::as_select(),
-                DbDish::as_select(),
-            ))
-            .filter(occurrences::id.eq(insert_result.id));
+        // Query inserted occurrence
+        // NOTE: We cannot simply use the given input as it only contains references for
+        // location, dish, side_dishes and tags.
+        // Also we do not necessarily know the database defaults for nullable fields.
+        let result = occurrences::table
+            .filter(occurrences::id.eq(insert_result.id))
+            .select(DbOccurrence::as_select())
+            .first(conn)
+            .expect("Error loading inserted occurrence");
 
-        let result: GqlOccurrence = query
-            .first::<(DbOccurrence, DbLocation, DbDish)>(conn)
-            .expect("Error loading occurrences")
-            .into();
-
-        Ok(result)
+        Ok(result.into())
     }
 
     async fn update_occurrence(
@@ -149,8 +136,6 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: UpdateOccurrenceInput,
     ) -> Result<GqlOccurrence> {
-        use crate::schema::occurrences;
-
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -165,23 +150,13 @@ impl OccurrenceMutations {
             .optional_empty_changeset()
             .expect("Error while updating");
 
-        // Query updated occurrence (with dish and location)
-        // TODO: Make more generic to accommodate for side_dishes and tags
-        let query = occurrences::table
-            .inner_join(locations::table)
-            .inner_join(dishes::table)
-            .select((
-                DbOccurrence::as_select(),
-                DbLocation::as_select(),
-                DbDish::as_select(),
-            ))
-            .filter(occurrences::id.eq(input.id));
+        // Query updated occurrence
+        let result = occurrences::table
+            .filter(occurrences::id.eq(input.id))
+            .select(DbOccurrence::as_select())
+            .first(conn)
+            .expect("Error loading inserted occurrence");
 
-        let result: GqlOccurrence = query
-            .first::<(DbOccurrence, DbLocation, DbDish)>(conn)
-            .expect("Error loading occurrences")
-            .into();
-
-        Ok(result)
+        Ok(result.into())
     }
 }

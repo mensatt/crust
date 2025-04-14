@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 
-#[derive(Debug, Queryable, Selectable, Insertable, Identifiable)]
+#[derive(Debug, Clone, Queryable, Selectable, Insertable, Identifiable)]
 #[diesel(primary_key(key))]
 #[diesel(table_name = crate::schema::tags)]
 #[diesel(check_for_backend(diesel::pg::Pg))]

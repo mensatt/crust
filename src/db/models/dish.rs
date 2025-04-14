@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 
-#[derive(Debug, Queryable, Selectable, Insertable, Identifiable)]
+#[derive(Debug, Clone, Queryable, Selectable, Insertable, Identifiable)]
 #[diesel(table_name = crate::schema::dishes)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DbDish {
