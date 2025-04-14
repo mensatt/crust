@@ -2,6 +2,7 @@ use async_graphql::{Context, SimpleObject};
 use diesel::prelude::*;
 
 use crate::db::{conn::DbPool, models::location::DbLocation};
+use crate::schema::locations::dsl::*;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "Location")]
@@ -28,9 +29,9 @@ pub struct LocationQueries;
 
 #[async_graphql::Object]
 impl LocationQueries {
-    // TODO: Filter
+    // TODO: Implement Filter
     async fn locations(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<GqlLocation>> {
-        use crate::schema::locations::dsl::*;
+        // NOTE: Using the TagLoader is not beneficial here since (for now) we don't filter on ids
 
         // Get DB conn
         let pool = ctx.data::<DbPool>()?;

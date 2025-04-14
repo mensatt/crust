@@ -1,6 +1,6 @@
 use diesel::prelude::*;
 
-#[derive(Debug, Queryable, Selectable, Insertable, Identifiable)]
+#[derive(Debug, Clone, Queryable, Selectable, Insertable, Identifiable)]
 #[diesel(table_name = crate::schema::locations)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DbLocation {
@@ -9,4 +9,3 @@ pub struct DbLocation {
     pub name: String,
     pub visible: bool,
 }
-

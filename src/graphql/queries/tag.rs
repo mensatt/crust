@@ -5,6 +5,7 @@ use crate::db::{
     conn::DbPool,
     models::tag::{DbTag, TagPriority},
 };
+use crate::schema::tags::dsl::*;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "Tag")]
@@ -36,7 +37,7 @@ pub struct TagQueries;
 #[async_graphql::Object]
 impl TagQueries {
     async fn tags(&self, ctx: &Context<'_>) -> Result<Vec<GqlTag>> {
-        use crate::schema::tags::dsl::*;
+        // NOTE: Using the TagLoader is not beneficial here since (for now) we don't filter on ids
 
         // Get DB conn
         let pool = ctx.data::<DbPool>()?;
