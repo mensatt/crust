@@ -2,7 +2,7 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
 
-use crate::graphql::dataloaders::{DishLoader, LocationLoader, TagLoader};
+use crate::graphql::dataloaders::{DishLoader, LocationLoader, TagLoader, SideDishLoader};
 use crate::{
     db::{conn::DbPool, models::occurrence::DbOccurrence},
     graphql::util::{GqlDate, GqlTimestamp},
@@ -67,9 +67,11 @@ impl GqlOccurrence {
         Ok(tags.into_iter().map(Into::into).collect())
     }
 
-    async fn side_dishes(&self, _ctx: &Context<'_>) -> Result<Vec<GqlDish>> {
-        // TODO: Add DishLoader and implement functionality here
-        Ok(vec![])
+    async fn side_dishes(&self, ctx: &Context<'_>) -> Result<Vec<GqlDish>> {
+        // println!("Loading side dishes for {}", self.id);
+        let loader = ctx.data::<DataLoader<SideDishLoader>>()?;
+        let side_dishes = loader.load_one(self.id).await?.unwrap_or_else(Vec::new);
+        Ok(side_dishes.into_iter().map(Into::into).collect())
     }
 
     // TODO: Add review_data

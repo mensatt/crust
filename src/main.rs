@@ -31,6 +31,12 @@ async fn main() -> Result<(), ()> {
         },
         tokio::spawn,
     );
+    let side_dish_loader = DataLoader::new(
+        SideDishLoader {
+            pool: get_db_pool(),
+        },
+        tokio::spawn,
+    );
     let tag_loader = DataLoader::new(
         TagLoader {
             pool: get_db_pool(),
@@ -42,6 +48,7 @@ async fn main() -> Result<(), ()> {
     let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
         .data(location_loader)
         .data(dish_loader)
+        .data(side_dish_loader)
         .data(tag_loader)
         .data(get_db_pool())
         .finish();
