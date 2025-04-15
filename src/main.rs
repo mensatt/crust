@@ -18,34 +18,37 @@ use crate::graphql::schema::*;
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
+    // Create database connection pool
+    let db_pool = get_db_pool();
+
     // Create dataloaders
     let dish_loader = DataLoader::new(
         DishLoader {
-            pool: get_db_pool(),
+            pool: db_pool.clone(),
         },
         tokio::spawn,
     );
     let location_loader = DataLoader::new(
         LocationLoader {
-            pool: get_db_pool(),
+            pool: db_pool.clone(),
         },
         tokio::spawn,
     );
     let occurrence_loader = DataLoader::new(
         OccurrenceLoader {
-            pool: get_db_pool(),
+            pool: db_pool.clone(),
         },
         tokio::spawn,
     );
     let side_dish_loader = DataLoader::new(
         SideDishLoader {
-            pool: get_db_pool(),
+            pool: db_pool.clone(),
         },
         tokio::spawn,
     );
     let tag_loader = DataLoader::new(
         TagLoader {
-            pool: get_db_pool(),
+            pool: db_pool.clone(),
         },
         tokio::spawn,
     );
@@ -57,7 +60,7 @@ async fn main() -> Result<(), ()> {
         .data(occurrence_loader)
         .data(side_dish_loader)
         .data(tag_loader)
-        .data(get_db_pool())
+        .data(db_pool.clone())
         .finish();
 
     let router = Router::new()
