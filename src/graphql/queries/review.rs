@@ -2,12 +2,14 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
 
+use crate::db::models::image::DbImage;
 use crate::db::{conn::DbPool, models::review::DbReview};
 use crate::graphql::util::GqlTimestamp;
+use crate::schema::images;
 use crate::schema::reviews::dsl::*;
 use crate::OccurrenceLoader;
 
-use super::GqlOccurrence;
+use super::{GqlImage, GqlOccurrence};
 
 #[derive(Debug, SimpleObject)]
 #[graphql(complex, name = "Review")]
@@ -35,6 +37,20 @@ impl GqlReview {
             .await?
             .ok_or("Occurrence not found")?;
         Ok(occ.into())
+    }
+
+    async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        let results = images::table
+            .select(DbImage::as_select())
+            .filter(images::review.eq(self.id))
+            .load(conn)
+            .expect("Error loading images for review");
+
+        Ok(results.into_iter().map(Into::into).collect())
     }
 }
 

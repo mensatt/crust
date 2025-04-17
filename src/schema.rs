@@ -15,6 +15,13 @@ diesel::table! {
 }
 
 diesel::table! {
+    images (id) {
+        id -> Uuid,
+        review -> Uuid,
+    }
+}
+
+diesel::table! {
     locations (id) {
         id -> Uuid,
         external_id -> Int8,
@@ -97,6 +104,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(images -> reviews (review));
 diesel::joinable!(occurrences -> dishes (dish));
 diesel::joinable!(occurrences -> locations (location));
 diesel::joinable!(occurrences_side_dishes -> dishes (dish));
@@ -107,6 +115,7 @@ diesel::joinable!(reviews -> occurrences (occurrence));
 
 diesel::allow_tables_to_appear_in_same_query!(
     dishes,
+    images,
     locations,
     occurrences,
     occurrences_side_dishes,
