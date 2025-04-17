@@ -40,6 +40,12 @@ async fn main() -> Result<(), ()> {
         },
         tokio::spawn,
     );
+    let occurrence_review_loader = DataLoader::new(
+        OccurrenceReviewLoader {
+            pool: db_pool.clone(),
+        },
+        tokio::spawn,
+    );
     let side_dish_loader = DataLoader::new(
         SideDishLoader {
             pool: db_pool.clone(),
@@ -58,6 +64,7 @@ async fn main() -> Result<(), ()> {
         .data(dish_loader)
         .data(location_loader)
         .data(occurrence_loader)
+        .data(occurrence_review_loader)
         .data(side_dish_loader)
         .data(tag_loader)
         .data(db_pool.clone())
