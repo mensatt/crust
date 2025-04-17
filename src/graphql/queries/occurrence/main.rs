@@ -5,10 +5,11 @@ use diesel::prelude::*;
 use crate::graphql::dataloaders::{DishLoader, LocationLoader, SideDishLoader, TagLoader};
 use crate::{
     db::{conn::DbPool, models::occurrence::DbOccurrence},
-    graphql::util::{GqlDate, GqlTimestamp},
+    graphql::{
+        queries::{GqlDish, GqlLocation, GqlReviewDataOccurrence, GqlTag},
+        util::{GqlDate, GqlTimestamp},
+    },
 };
-
-use super::{GqlDish, GqlLocation, GqlTag};
 
 #[derive(Debug, SimpleObject)]
 #[graphql(complex, name = "Occurrence")]
@@ -74,7 +75,13 @@ impl GqlOccurrence {
         Ok(side_dishes.into_iter().map(Into::into).collect())
     }
 
-    // TODO: Add review_data
+    async fn review_data(&self, _ctx: &Context<'_>) -> Result<GqlReviewDataOccurrence> {
+        // NOTE: Resolving fields for review_data is handled by the review and metadata
+        //       resolvers of GqlReviewDataOccurrence
+        Ok(GqlReviewDataOccurrence {
+            occurrence_id: self.id,
+        })
+    }
 }
 
 impl From<DbOccurrence> for GqlOccurrence {
