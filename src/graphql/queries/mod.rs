@@ -5,7 +5,7 @@ mod review;
 mod tag;
 mod user;
 
-pub use dish::{DishQueries, GqlDish};
+pub use dish::{DishQueries, GqlDish, GqlReviewDataDish};
 pub use location::{GqlLocation, LocationQueries};
 pub use occurrence::{GqlOccurrence, GqlReviewDataOccurrence, OccurrenceQueries};
 pub use review::{GqlReview, ReviewQueries};
