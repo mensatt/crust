@@ -4,8 +4,9 @@ use diesel::dsl::{avg, count};
 use diesel::prelude::*;
 
 use crate::db::conn::DbPool;
-use crate::graphql::queries::GqlReview;
-use crate::schema::reviews;
+use crate::db::models::image::DbImage;
+use crate::graphql::queries::{GqlImage, GqlReview};
+use crate::schema::{images, reviews};
 use crate::OccurrenceReviewLoader;
 
 #[derive(Debug, SimpleObject)]
@@ -60,5 +61,18 @@ impl GqlReviewDataOccurrence {
         })
     }
 
-    // TODO: Images
+    async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Fetch images for this occurrence_id from database
+        let results = reviews::table
+            .filter(reviews::occurrence.eq(self.occurrence_id))
+            .inner_join(images::table)
+            .select(DbImage::as_select())
+            .load::<DbImage>(conn)?;
+
+        Ok(results.into_iter().map(Into::into).collect())
+    }
 }

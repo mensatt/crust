@@ -3,6 +3,7 @@ use crate::graphql::{mutations::*, queries::*};
 #[derive(async_graphql::MergedObject, Default)]
 pub struct Query(
     DishQueries,
+    ImageQueries,
     LocationQueries,
     OccurrenceQueries,
     ReviewQueries,

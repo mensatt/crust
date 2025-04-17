@@ -1,4 +1,5 @@
 pub mod dish;
+pub mod image;
 pub mod location;
 pub mod occurrence;
 pub mod occurrence_side_dish;
