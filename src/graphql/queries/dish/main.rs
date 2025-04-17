@@ -4,13 +4,15 @@ use diesel::prelude::*;
 use crate::db::{conn::DbPool, models::dish::DbDish};
 use crate::schema::dishes;
 
+use super::GqlReviewDataDish;
+
 #[derive(Debug, SimpleObject)]
-#[graphql(name = "Dish")]
+#[graphql(complex, name = "Dish")]
 pub struct GqlDish {
     pub id: uuid::Uuid,
     pub name_de: String,
     pub name_en: Option<String>,
-    // TODO: aliases, reviewData
+    // TODO: aliases
 }
 
 impl From<DbDish> for GqlDish {
@@ -20,6 +22,15 @@ impl From<DbDish> for GqlDish {
             name_de: value.name_de,
             name_en: value.name_en,
         }
+    }
+}
+
+#[async_graphql::ComplexObject]
+impl GqlDish {
+    async fn review_data(&self, _ctx: &Context<'_>) -> Result<GqlReviewDataDish> {
+        // NOTE: Resolving fields for review_data is handled by the review and metadata
+        //       resolvers of GqlReviewDataDish
+        Ok(GqlReviewDataDish { dish_id: self.id })
     }
 }
 
