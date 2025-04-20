@@ -15,6 +15,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    dishes_aliases (alias_name) {
+        alias_name -> Varchar,
+        normalized_alias_name -> Varchar,
+        dish -> Uuid,
+    }
+}
+
+diesel::table! {
     images (id) {
         id -> Uuid,
         review -> Uuid,
@@ -104,6 +112,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(dishes_aliases -> dishes (dish));
 diesel::joinable!(images -> reviews (review));
 diesel::joinable!(occurrences -> dishes (dish));
 diesel::joinable!(occurrences -> locations (location));
@@ -115,6 +124,7 @@ diesel::joinable!(reviews -> occurrences (occurrence));
 
 diesel::allow_tables_to_appear_in_same_query!(
     dishes,
+    dishes_aliases,
     images,
     locations,
     occurrences,
