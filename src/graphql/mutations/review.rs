@@ -1,12 +1,27 @@
+use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::db::{
-    conn::DbPool,
-    models::review::{DbReview, DbReviewChangeset},
-};
 use crate::graphql::queries::GqlReview;
 use crate::schema::reviews;
+use crate::ReviewLoader;
+use crate::{
+    db::{
+        conn::DbPool,
+        models::{
+            image::DbImage,
+            review::{DbReview, DbReviewChangeset},
+        },
+    },
+    schema::images,
+};
+
+#[derive(Debug, InputObject)]
+pub struct ImageInput {
+    id: uuid::Uuid,
+    // TODO: This is currently unused; Implement functionality from old backend
+    rotation: Option<i64>,
+}
 
 #[derive(Debug, InputObject)]
 pub struct CreateReviewInput {
@@ -14,7 +29,7 @@ pub struct CreateReviewInput {
     pub display_name: Option<String>,
     pub stars: i64,
     pub text: Option<String>,
-    // TODO: Images
+    pub images: Option<Vec<ImageInput>>,
 }
 
 #[derive(Debug, InputObject, Clone)]
@@ -62,6 +77,23 @@ impl From<UpdateReviewInput> for DbReviewChangeset {
     }
 }
 
+#[derive(Debug, InputObject)]
+pub struct DeleteReviewInput {
+    id: uuid::Uuid,
+}
+
+#[derive(Debug, InputObject)]
+pub struct AddImagesToReviewInput {
+    pub review: uuid::Uuid,
+    pub images: Vec<ImageInput>,
+}
+
+#[derive(Debug, InputObject)]
+pub struct RemoveImagesFromReviewInput {
+    pub review: uuid::Uuid,
+    pub images: Vec<uuid::Uuid>,
+}
+
 #[derive(Default)]
 pub struct ReviewMutations;
 
@@ -93,6 +125,21 @@ impl ReviewMutations {
             .values(&new_review)
             .get_result(conn)
             .expect("Error saving new review");
+
+        // If present, create images for review
+        if let Some(images) = input.images {
+            // TODO: Handle image rotation (?)
+            // TODO: Notify image service about submitted image
+            for image in images {
+                diesel::insert_into(images::table)
+                    .values(&DbImage {
+                        id: image.id,
+                        review: new_review.id,
+                    })
+                    .execute(conn)
+                    .expect("Error adding image for review");
+            }
+        }
 
         Ok(result.into())
     }
@@ -129,5 +176,83 @@ impl ReviewMutations {
         });
 
         Ok(result.into())
+    }
+
+    async fn delete_review(
+        &self,
+        ctx: &Context<'_>,
+        input: DeleteReviewInput,
+        // TODO: Consider other response type
+        //       Number of rows affected?, id of deleted object?, Query object before deletion?
+    ) -> Result<bool> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        let amount = diesel::delete(reviews::table)
+            .filter(reviews::id.eq(input.id))
+            .execute(conn)
+            .expect("Failed to delete review");
+        Ok(amount == 1)
+    }
+
+    async fn add_images_to_review(
+        &self,
+        ctx: &Context<'_>,
+        input: AddImagesToReviewInput,
+    ) -> Result<GqlReview> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Create images for review
+        // TODO: Handle image rotation (?)
+        // TODO: Notify image service about submitted image(s)
+        for image in input.images {
+            diesel::insert_into(images::table)
+                .values(&DbImage {
+                    id: image.id,
+                    review: input.review,
+                })
+                .execute(conn)
+                .expect("Error adding image for review");
+        }
+
+        // Load and return review
+        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
+        let rev = loader
+            .load_one(input.review)
+            .await?
+            .ok_or("Review not found")?;
+        Ok(rev.into())
+    }
+
+    async fn remove_images_from_review(
+        &self,
+        ctx: &Context<'_>,
+        input: RemoveImagesFromReviewInput,
+    ) -> Result<GqlReview> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Delete images for review
+        diesel::delete(
+            images::table.filter(
+                images::review
+                    .eq(input.review)
+                    .and(images::id.eq_any(input.images)),
+            ),
+        )
+        .execute(conn)
+        .expect("Unable to remove images from review");
+
+        // Load and return review
+        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
+        let rev = loader
+            .load_one(input.review)
+            .await?
+            .ok_or("Review not found")?;
+        Ok(rev.into())
     }
 }
