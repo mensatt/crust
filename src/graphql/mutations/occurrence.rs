@@ -1,12 +1,23 @@
-use async_graphql::{Context, InputObject, Result};
+use async_graphql::{dataloader::DataLoader, Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::db::{
-    conn::DbPool,
-    models::occurrence::{DbOccurrence, DbOccurrenceChangeset},
+use crate::{
+    db::{
+        conn::DbPool,
+        models::{
+            occurrence::{DbOccurrence, DbOccurrenceChangeset},
+            occurrence_side_dish::DbOccurrenceSideDish,
+            occurrence_tag::DbOccurrenceTag,
+            tag::DbTag,
+        },
+    },
+    graphql::{
+        queries::{GqlDish, GqlOccurrence, GqlTag},
+        util::GqlDate,
+    },
+    schema::{occurrences_side_dishes, occurrences_tags, occurrences, tags},
+    DishLoader, OccurrenceLoader,
 };
-use crate::graphql::{queries::GqlOccurrence, util::GqlDate};
-use crate::schema::occurrences;
 
 #[derive(Debug, InputObject)]
 pub struct CreateOccurrenceInput {
@@ -26,8 +37,8 @@ pub struct CreateOccurrenceInput {
     // Foreign keys
     pub dish: uuid::Uuid,
     pub location: uuid::Uuid,
-    pub side_dishes: Option<Vec<uuid::Uuid>>, // TODO: Currently unused
-    pub tags: Option<Vec<String>>,            // TODO: Currently unused
+    pub side_dishes: Option<Vec<uuid::Uuid>>,
+    pub tags: Option<Vec<String>>,
 }
 
 #[derive(Debug, InputObject, Clone, Copy)]
@@ -72,6 +83,105 @@ impl From<UpdateOccurrenceInput> for DbOccurrenceChangeset {
             status: None,
         }
     }
+}
+
+#[derive(Debug, InputObject)]
+pub struct DeleteOccurrenceInput {
+    id: uuid::Uuid,
+}
+
+// TODO: I (Bene) think this type is unnecessary and can be replaced by simply returning the
+//       Occurrence instead of this wrapper type. Same goes for OccurrenceTag.
+//       It currently is present to be as compatible with the existing API as possible.
+pub struct OccurrenceSideDish {
+    // Internal fields, these should not be exposed via the API
+    pub occurrence_id: uuid::Uuid,
+    pub dish_id: uuid::Uuid,
+}
+
+#[async_graphql::Object]
+impl OccurrenceSideDish {
+    async fn occurrence(&self, ctx: &Context<'_>) -> Result<GqlOccurrence> {
+        let loader = ctx.data::<DataLoader<OccurrenceLoader>>()?;
+        let occ = loader
+            .load_one(self.occurrence_id)
+            .await?
+            .ok_or("Occurrence not found")?;
+        Ok(occ.into())
+    }
+
+    async fn dish(&self, ctx: &Context<'_>) -> Result<GqlDish> {
+        let loader = ctx.data::<DataLoader<DishLoader>>()?;
+        let dish = loader
+            .load_one(self.dish_id)
+            .await?
+            .ok_or("Dish not found")?;
+        Ok(dish.into())
+    }
+}
+
+pub struct OccurrenceTag {
+    // Internal fields, these should not be exposed via the API
+    pub occurrence_id: uuid::Uuid,
+    pub tag_id: String,
+}
+
+#[async_graphql::Object]
+impl OccurrenceTag {
+    async fn occurrence(&self, ctx: &Context<'_>) -> Result<GqlOccurrence> {
+        let loader = ctx.data::<DataLoader<OccurrenceLoader>>()?;
+        let occ = loader
+            .load_one(self.occurrence_id)
+            .await?
+            .ok_or("Occurrence not found")?;
+        Ok(occ.into())
+    }
+
+    async fn tag(&self, ctx: &Context<'_>) -> Result<GqlTag> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        let tag = tags::table
+            .filter(tags::key.eq(&self.tag_id))
+            .first::<DbTag>(conn)
+            .expect("Error loading tag");
+        Ok(tag.into())
+    }
+}
+
+#[derive(Debug, InputObject, Insertable)]
+#[diesel(table_name = crate::schema::occurrences_side_dishes)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct AddSideDishToOccurrenceInput {
+    pub occurrence: uuid::Uuid,
+    pub dish: uuid::Uuid,
+}
+
+#[derive(Debug, InputObject, Identifiable)]
+#[diesel(table_name = crate::schema::occurrences_side_dishes)]
+#[diesel(primary_key(occurrence, dish))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct RemoveSideDishFromOccurrenceInput {
+    pub occurrence: uuid::Uuid,
+    pub dish: uuid::Uuid,
+}
+
+#[derive(Debug, InputObject, Insertable)]
+#[diesel(table_name = crate::schema::occurrences_tags)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct AddTagToOccurrenceInput {
+    pub occurrence: uuid::Uuid,
+    pub tag: String,
+}
+
+#[derive(Debug, InputObject, Identifiable)]
+#[diesel(table_name = crate::schema::occurrences_tags)]
+#[diesel(primary_key(occurrence, tag))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct RemoveTagFromOccurrenceInput {
+    pub occurrence: uuid::Uuid,
+    pub tag: String,
 }
 
 #[derive(Default)]
@@ -119,6 +229,32 @@ impl OccurrenceMutations {
             .get_result::<DbOccurrence>(conn)
             .expect("Error saving new occurrence");
 
+        // If present, insert side dishes for occurrence
+        if let Some(side_dish_ids) = input.side_dishes {
+            for side_dish_id in side_dish_ids {
+                diesel::insert_into(occurrences_side_dishes::table)
+                    .values(&DbOccurrenceSideDish {
+                        occurrence: new_occurrence.id,
+                        dish: side_dish_id,
+                    })
+                    .execute(conn)
+                    .expect("Failed to add side dish to occurrence");
+            }
+        }
+
+        // If present, insert tags for occurrence
+        if let Some(tags) = input.tags {
+            for tag in tags {
+                diesel::insert_into(occurrences_tags::table)
+                    .values(&DbOccurrenceTag {
+                        occurrence: new_occurrence.id,
+                        tag,
+                    })
+                    .execute(conn)
+                    .expect("Failed to add tag to occurrence");
+            }
+        }
+
         Ok(result.into())
     }
 
@@ -154,5 +290,109 @@ impl OccurrenceMutations {
         });
 
         Ok(result.into())
+    }
+
+    async fn delete_occurrence(
+        &self,
+        ctx: &Context<'_>,
+        input: DeleteOccurrenceInput,
+        // TODO: Consider other response type
+        //       Number of rows affected?, id of deleted object?, Query object before deletion?
+    ) -> Result<bool> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        let amount = diesel::delete(occurrences::table)
+            .filter(occurrences::id.eq(input.id))
+            .execute(conn)
+            .expect("Failed to delete occurrence");
+        Ok(amount == 1)
+    }
+
+    async fn add_side_dish_to_occurrence(
+        &self,
+        ctx: &Context<'_>,
+        input: AddSideDishToOccurrenceInput,
+    ) -> Result<OccurrenceSideDish> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Add side dish
+        diesel::insert_into(occurrences_side_dishes::table)
+            .values(&input)
+            .execute(conn)
+            .expect("Failed to add side dish to occurrence");
+
+        Ok(OccurrenceSideDish {
+            occurrence_id: input.occurrence,
+            dish_id: input.dish,
+        })
+    }
+
+    async fn remove_side_dish_from_occurrence(
+        &self,
+        ctx: &Context<'_>,
+        input: RemoveSideDishFromOccurrenceInput,
+    ) -> Result<OccurrenceSideDish> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Identify...
+        let rows_to_delete = occurrences_side_dishes::table.find((input.occurrence, input.dish));
+        // ... and delete rows
+        diesel::delete(rows_to_delete)
+            .execute(conn)
+            .expect("Failed to remove side dish from occurrence");
+
+        Ok(OccurrenceSideDish {
+            occurrence_id: input.occurrence,
+            dish_id: input.dish,
+        })
+    }
+
+    async fn add_tag_to_occurrence(
+        &self,
+        ctx: &Context<'_>,
+        input: AddTagToOccurrenceInput,
+    ) -> Result<OccurrenceTag> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Add tag for occurrence
+        diesel::insert_into(occurrences_tags::table)
+            .values(&input)
+            .execute(conn)
+            .expect("Failed to add tag to occurrence");
+
+        Ok(OccurrenceTag {
+            occurrence_id: input.occurrence,
+            tag_id: input.tag,
+        })
+    }
+
+    async fn remove_tag_from_occurrence(
+        &self,
+        ctx: &Context<'_>,
+        input: RemoveTagFromOccurrenceInput,
+    ) -> Result<OccurrenceTag> {
+        // Get DB connection
+        let pool = ctx.data::<DbPool>()?;
+        let conn = &mut pool.get().unwrap();
+
+        // Identify...
+        let rows_to_delete = occurrences_tags::table.find((input.occurrence, &input.tag));
+        // ... and delete rows
+        diesel::delete(rows_to_delete)
+            .execute(conn)
+            .expect("Failed to remove tag from occurrence");
+
+        Ok(OccurrenceTag {
+            occurrence_id: input.occurrence,
+            tag_id: input.tag,
+        })
     }
 }
