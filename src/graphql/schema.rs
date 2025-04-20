@@ -14,6 +14,7 @@ pub struct Query(
 #[derive(async_graphql::MergedObject, Default)]
 pub struct Mutation(
     DishMutations,
+    DishAliasMutations,
     LocationMutations,
     OccurrenceMutations,
     ReviewMutations,
