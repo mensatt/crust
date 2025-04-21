@@ -1,5 +1,5 @@
 use async_graphql::dataloader::DataLoader;
-use async_graphql::{Context, Result, SimpleObject};
+use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
 
 use crate::graphql::dataloaders::{DishLoader, LocationLoader, SideDishLoader, TagLoader};
@@ -36,6 +36,15 @@ pub struct GqlOccurrence {
     pub location_id: uuid::Uuid,
     #[graphql(skip)]
     pub dish_id: uuid::Uuid,
+}
+
+#[derive(Debug, InputObject)]
+pub struct OccurrenceFilter {
+    pub occurrences: Option<Vec<uuid::Uuid>>,
+    pub dishes: Option<Vec<uuid::Uuid>>,
+    pub start_date: Option<GqlDate>,
+    pub end_date: Option<GqlDate>,
+    pub location: Option<uuid::Uuid>,
 }
 
 // Resolvers for nested fields
@@ -114,18 +123,42 @@ pub struct OccurrenceQueries;
 
 #[async_graphql::Object]
 impl OccurrenceQueries {
-    // TODO: Filter
-    async fn occurrences(&self, ctx: &Context<'_>) -> Result<Vec<GqlOccurrence>> {
+    async fn occurrences(
+        &self,
+        ctx: &Context<'_>,
+        filter: Option<OccurrenceFilter>,
+    ) -> Result<Vec<GqlOccurrence>> {
         use crate::schema::occurrences::dsl::*;
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
+        // Construct query
+        let mut query = occurrences.select(DbOccurrence::as_select()).into_boxed();
+
+        // Add neccessary clauses depending on present filter values
+        if let Some(f) = filter {
+            if let Some(filter_occurrences) = f.occurrences {
+                query = query.filter(id.eq_any(filter_occurrences));
+            }
+            if let Some(filter_dishes) = f.dishes {
+                query = query.filter(dish.eq_any(filter_dishes));
+            }
+            if let Some(filter_location) = f.location {
+                query = query.filter(location.eq(filter_location));
+            }
+            if let Some(filter_start_date) = f.start_date {
+                let start_date: chrono::DateTime<chrono::Utc> = filter_start_date.into();
+                query = query.filter(date.ge(start_date));
+            }
+            if let Some(filter_end_date) = f.end_date {
+                let end_date: chrono::DateTime<chrono::Utc> = filter_end_date.into();
+                query = query.filter(date.le(end_date));
+            }
+        }
+
         // Fetch required occurrences
-        let data = occurrences
-            .select(DbOccurrence::as_select())
-            .load(conn)
-            .expect("Error loading occurrences");
+        let data = query.load(conn).expect("Error loading occurrences");
 
         // Convert from DbOccurrence to GqlOccurrence
         Ok(data.into_iter().map(Into::into).collect())
