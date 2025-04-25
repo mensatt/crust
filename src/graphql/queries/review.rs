@@ -1,5 +1,5 @@
 use async_graphql::dataloader::DataLoader;
-use async_graphql::{Context, Result, SimpleObject};
+use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
 
 use crate::db::models::image::DbImage;
@@ -69,21 +69,42 @@ impl From<DbReview> for GqlReview {
     }
 }
 
+#[derive(Debug, InputObject, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct ReviewFilter {
+    pub approved: Option<bool>,
+}
+
 #[derive(Default)]
 pub struct ReviewQueries;
 
 #[async_graphql::Object]
 impl ReviewQueries {
-    // TODO: Implement Filter
-    async fn reviews(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<GqlReview>> {
-        // NOTE: Using the TagLoader is not beneficial here since (for now) we don't filter on ids
+    async fn reviews(
+        &self,
+        ctx: &Context<'_>,
+        filter: Option<ReviewFilter>,
+    ) -> async_graphql::Result<Vec<GqlReview>> {
+        // NOTE: Using the ReviewLoader is not beneficial here since we don't exclusively filter on ids
 
-        // Get DB conn
+        // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
 
-        // Construct and execute query
-        let query = reviews.select(DbReview::as_select());
+        // Construct basic query
+        let mut query = reviews.select(DbReview::as_select()).into_boxed();
+
+        // Add neccessary clauses depending on present filter values
+        if let Some(f) = filter {
+            if let Some(filter_approved) = f.approved {
+                if filter_approved {
+                    query = query.filter(accepted_at.is_not_null());
+                } else {
+                    query = query.filter(accepted_at.is_null());
+                }
+            }
+        }
+
+        // Execute query
         let results = query.load(conn).expect("Error loading reviews");
         Ok(results.into_iter().map(Into::into).collect())
     }

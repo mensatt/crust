@@ -5,9 +5,9 @@ use diesel::prelude::*;
 
 use crate::db::conn::DbPool;
 use crate::db::models::image::DbImage;
-use crate::graphql::queries::{GqlImage, GqlReview};
+use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
+use crate::graphql::queries::{GqlImage, GqlReview, ReviewFilter};
 use crate::schema::{images, reviews};
-use crate::OccurrenceReviewLoader;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "ReviewMetadataOccurrence")]
@@ -18,15 +18,19 @@ pub struct GqlReviewMetadataOccurrence {
 
 pub struct GqlReviewDataOccurrence {
     pub occurrence_id: uuid::Uuid,
+    pub filter: Option<ReviewFilter>
 }
 
 #[async_graphql::Object(name = "ReviewDataOccurrence")]
 impl GqlReviewDataOccurrence {
     async fn reviews(&self, ctx: &Context<'_>) -> Result<Vec<GqlReview>> {
         // println!("Loading reviews for occurrence {}", self.occurrence_id);
-        let loader = ctx.data::<DataLoader<OccurrenceReviewLoader>>()?;
+        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
         let reviews = loader
-            .load_one(self.occurrence_id)
+            .load_one(ReviewLoaderKey::ByOccurrenceId {
+                occurrence_id: self.occurrence_id,
+                filter: self.filter,
+            })
             .await?
             .unwrap_or_else(Vec::new);
         Ok(reviews.into_iter().map(Into::into).collect())

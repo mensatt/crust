@@ -4,6 +4,7 @@ use diesel::prelude::*;
 
 use crate::db::models::dish_alias::DbDishAlias;
 use crate::db::{conn::DbPool, models::dish::DbDish};
+use crate::graphql::queries::ReviewFilter;
 use crate::schema::{dishes, dishes_aliases};
 use crate::DishLoader;
 
@@ -63,10 +64,10 @@ impl From<DbDish> for GqlDish {
 
 #[async_graphql::ComplexObject]
 impl GqlDish {
-    async fn review_data(&self, _ctx: &Context<'_>) -> Result<GqlReviewDataDish> {
+    async fn review_data(&self, _ctx: &Context<'_>, filter: Option<ReviewFilter>) -> Result<GqlReviewDataDish> {
         // NOTE: Resolving fields for review_data is handled by the review and metadata
         //       resolvers of GqlReviewDataDish
-        Ok(GqlReviewDataDish { dish_id: self.id })
+        Ok(GqlReviewDataDish { dish_id: self.id, filter})
     }
 
     async fn aliases(&self, ctx: &Context<'_>) -> Result<Vec<GqlDishAlias>> {

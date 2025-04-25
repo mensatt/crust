@@ -5,9 +5,9 @@ use diesel::prelude::*;
 
 use crate::db::conn::DbPool;
 use crate::db::models::image::DbImage;
-use crate::graphql::queries::{GqlImage, GqlReview};
+use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
+use crate::graphql::queries::{GqlImage, GqlReview, ReviewFilter};
 use crate::schema::{images, occurrences, reviews};
-use crate::DishReviewLoader;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "ReviewMetadataDish")]
@@ -18,15 +18,19 @@ pub struct GqlReviewMetadataDish {
 
 pub struct GqlReviewDataDish {
     pub dish_id: uuid::Uuid,
+    pub filter: Option<ReviewFilter>,
 }
 
 #[async_graphql::Object(name = "ReviewDataDish")]
 impl GqlReviewDataDish {
     async fn reviews(&self, ctx: &Context<'_>) -> Result<Vec<GqlReview>> {
         // println!("Loading reviews for dish {}", self.dish_id);
-        let loader = ctx.data::<DataLoader<DishReviewLoader>>()?;
+        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
         let reviews = loader
-            .load_one(self.dish_id)
+            .load_one(ReviewLoaderKey::ByDishId {
+                dish_id: self.dish_id,
+                filter: self.filter,
+            })
             .await?
             .unwrap_or_else(Vec::new);
         Ok(reviews.into_iter().map(Into::into).collect())

@@ -3,6 +3,7 @@ use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
 
 use crate::graphql::dataloaders::{DishLoader, LocationLoader, SideDishLoader, TagLoader};
+use crate::graphql::queries::ReviewFilter;
 use crate::{
     db::{conn::DbPool, models::occurrence::DbOccurrence},
     graphql::{
@@ -84,11 +85,12 @@ impl GqlOccurrence {
         Ok(side_dishes.into_iter().map(Into::into).collect())
     }
 
-    async fn review_data(&self, _ctx: &Context<'_>) -> Result<GqlReviewDataOccurrence> {
+    async fn review_data(&self, _ctx: &Context<'_>, filter: Option<ReviewFilter>) -> Result<GqlReviewDataOccurrence> {
         // NOTE: Resolving fields for review_data is handled by the review and metadata
         //       resolvers of GqlReviewDataOccurrence
         Ok(GqlReviewDataOccurrence {
             occurrence_id: self.id,
+            filter,
         })
     }
 }
