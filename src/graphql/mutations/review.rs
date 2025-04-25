@@ -2,9 +2,9 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
 use crate::graphql::queries::GqlReview;
 use crate::schema::reviews;
-use crate::ReviewLoader;
 use crate::{
     db::{
         conn::DbPool,
@@ -221,9 +221,10 @@ impl ReviewMutations {
         // Load and return review
         let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
         let rev = loader
-            .load_one(input.review)
+            .load_one(ReviewLoaderKey::ByReviewId { id: input.review })
             .await?
-            .ok_or("Review not found")?;
+            .and_then(|v| v.into_iter().next())
+            .expect("Review not found");
         Ok(rev.into())
     }
 
@@ -250,9 +251,10 @@ impl ReviewMutations {
         // Load and return review
         let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
         let rev = loader
-            .load_one(input.review)
+            .load_one(ReviewLoaderKey::ByReviewId { id: input.review })
             .await?
-            .ok_or("Review not found")?;
+            .and_then(|v| v.into_iter().next())
+            .expect("Review not found");
         Ok(rev.into())
     }
 }

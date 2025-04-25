@@ -28,12 +28,6 @@ async fn main() -> Result<(), ()> {
         },
         tokio::spawn,
     );
-    let dish_review_loader = DataLoader::new(
-        DishReviewLoader {
-            pool: db_pool.clone(),
-        },
-        tokio::spawn,
-    );
     let location_loader = DataLoader::new(
         LocationLoader {
             pool: db_pool.clone(),
@@ -42,12 +36,6 @@ async fn main() -> Result<(), ()> {
     );
     let occurrence_loader = DataLoader::new(
         OccurrenceLoader {
-            pool: db_pool.clone(),
-        },
-        tokio::spawn,
-    );
-    let occurrence_review_loader = DataLoader::new(
-        OccurrenceReviewLoader {
             pool: db_pool.clone(),
         },
         tokio::spawn,
@@ -74,10 +62,8 @@ async fn main() -> Result<(), ()> {
     // Create GraphQL schema and add dataloaders and DB pool to its context
     let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
         .data(dish_loader)
-        .data(dish_review_loader)
         .data(location_loader)
         .data(occurrence_loader)
-        .data(occurrence_review_loader)
         .data(review_loader)
         .data(side_dish_loader)
         .data(tag_loader)

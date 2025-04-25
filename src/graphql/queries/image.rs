@@ -3,7 +3,7 @@ use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
 
 use crate::db::{conn::DbPool, models::image::DbImage};
-use crate::graphql::dataloaders::ReviewLoader;
+use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
 use crate::schema::images::dsl::*;
 
 use super::GqlReview;
@@ -33,9 +33,10 @@ impl GqlImage {
         // println!("Loading review for image_id {}", self.id);
         let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
         let rev = loader
-            .load_one(self.review_id)
+            .load_one(ReviewLoaderKey::ByReviewId { id: self.review_id })
             .await?
-            .ok_or("Location not found")?;
+            .and_then(|v| v.into_iter().next())
+            .expect("Review not found");
         Ok(rev.into())
     }
 }
