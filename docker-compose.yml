@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17.4-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: new-mensatt
+      POSTGRES_USER: mensatt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?} # :? ensures value is set and non-empty
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data/
+    # command: postgres -c config_file=/etc/postgresql/postgresql.conf
+  mensatt:
+    build:
+      dockerfile: Dockerfile
+    image: crust:latest
+    ports:
+      - 8000:8000
