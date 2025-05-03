@@ -17,9 +17,18 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5.2", features = ["cors"] }
 # For SQL Stuff
 diesel = { version = "2.2.6", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
-bigdecimal = "0.4" # For handling PgNumeric of avg() queries
 diesel-derive-enum = { version = "3.0.0-beta.1", features = ["postgres"] }
+bigdecimal = "0.4" # For handling PgNumeric of avg() queries
+# For building a standalone build (useful in Docker under alpine)
+pq-sys = { version = "0.7", features = ["bundled"] }
+openssl-sys = { version = "0.9", features = ["vendored"] }
 # Config Stuff
 config = "0.15.6"
 # slab = "0.4.9"
 # futures = "0.3.30"
+
+[patch.crates-io]
+# Override version above with latest master version
+# NOTE: This can be removed once there is a release with musl support
+#       (which was added in https://github.com/sgrif/pq-sys/pull/87)
+pq-sys = { git = "https://github.com/sgrif/pq-sys", branch = "master" }
