@@ -10,16 +10,26 @@ use axum::{
     routing::get,
     Router,
 };
+use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::db::conn::get_db_pool;
 use crate::graphql::dataloaders::*;
 use crate::graphql::schema::*;
 
+// Embedd migrations into executable
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+
 #[tokio::main]
 async fn main() -> Result<(), ()> {
     // Create database connection pool
     let db_pool = get_db_pool();
+
+    // Run pending migrations
+    // NOTE: We assume there already is database with the right name
+    let mut conn = db_pool.get().expect("Failed to get connection from pool");
+    conn.run_pending_migrations(MIGRATIONS)
+        .expect("Failed to apply pending migrations");
 
     // Create dataloaders
     let dish_loader = DataLoader::new(
@@ -82,9 +92,7 @@ async fn main() -> Result<(), ()> {
                 .allow_methods([Method::GET, Method::POST]),
         );
 
-    let listener = tokio::net::TcpListener::bind("localhost:8000")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
 
     axum::serve(listener, router.into_make_service())
         .await
