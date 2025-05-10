@@ -1,6 +1,7 @@
 use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::db::{conn::DbPool, models::user::DbUser};
 
 #[derive(Debug, SimpleObject)]
@@ -24,6 +25,25 @@ pub struct UserQueries;
 
 #[async_graphql::Object]
 impl UserQueries {
+    async fn current_user(&self, ctx: &Context<'_>) -> Result<Option<GqlUser>> {
+        use crate::schema::users::dsl::*;
+
+        // Query user based on sub claim (if present)
+        match &ctx.data::<AuthContext>()?.claims {
+            Some(claims) => {
+                // Get DB connection
+                let pool = ctx.data::<DbPool>()?;
+                let conn = &mut pool.get().unwrap();
+
+                // Query user from DB based on sub claim
+                // TODO: Error handling
+                let user = users.filter(email.eq(&claims.sub)).first::<DbUser>(conn)?;
+                Ok(Some(user.into()))
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn users(&self, ctx: &Context<'_>) -> Result<Vec<GqlUser>> {
         use crate::schema::users::dsl::*;
 
