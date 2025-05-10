@@ -102,7 +102,19 @@ async fn main() -> Result<(), ()> {
 }
 
 async fn graphiql() -> impl IntoResponse {
-    Html(GraphiQLSource::build().endpoint("/playground").finish())
+    Html(
+        GraphiQLSource::build()
+            .endpoint("/playground")
+            .finish()
+            // Replace lines were added because of
+            //   https://github.com/async-graphql/async-graphql/issues/1703
+            // they can be removed once the issue is resolved.
+            .replace("@17", "@18")
+            .replace(
+                "ReactDOM.render(",
+                "ReactDOM.createRoot(document.getElementById(\"graphiql\")).render(",
+            ),
+    )
 }
 
 async fn hello_world() -> &'static str {
