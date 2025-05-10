@@ -130,8 +130,6 @@ async fn graphql_handler(
         .and_then(|s| s.strip_prefix("Bearer ")) // Extract Bearer value
         .and_then(|token| verify_jwt(token, &state.jwt_keypair.decoding_key).ok()); // Verify if it's a valid JWT
 
-    println!("Request has claims: {:?}", claims);
-
     // Add the (optional) claims into the AuthContext and execute the given query
     state
         .schema
