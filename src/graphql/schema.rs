@@ -1,3 +1,5 @@
+use async_graphql::{EmptySubscription, Schema};
+
 use crate::graphql::{mutations::*, queries::*};
 
 #[derive(async_graphql::MergedObject, Default)]
@@ -21,3 +23,6 @@ pub struct Mutation(
     TagMutations,
     UserMutations,
 );
+
+// Small helper type to avoid code duplication
+pub type GqlSchema = Schema<Query, Mutation, EmptySubscription>;

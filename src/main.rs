@@ -1,11 +1,15 @@
+pub mod auth;
 pub mod db;
 pub mod graphql;
 pub mod schema;
 
+use std::sync::Arc;
+
 use async_graphql::{dataloader::DataLoader, http::GraphiQLSource, EmptySubscription, Schema};
-use async_graphql_axum::GraphQL;
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
-    http::Method,
+    extract::State,
+    http::{HeaderMap, Method},
     response::{Html, IntoResponse},
     routing::get,
     Router,
@@ -13,12 +17,20 @@ use axum::{
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
+use crate::auth::{init_jwt_keypair, verify_jwt, AuthContext, JwtKeyPair};
 use crate::db::conn::get_db_pool;
 use crate::graphql::dataloaders::*;
 use crate::graphql::schema::*;
 
 // Embedd migrations into executable
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+
+// State for Axum Router
+#[derive(Clone)]
+pub struct AppState {
+    pub schema: GqlSchema,
+    pub jwt_keypair: Arc<JwtKeyPair>,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
@@ -30,6 +42,9 @@ async fn main() -> Result<(), ()> {
     let mut conn = db_pool.get().expect("Failed to get connection from pool");
     conn.run_pending_migrations(MIGRATIONS)
         .expect("Failed to apply pending migrations");
+
+    // Read JWT keypair
+    let jwt_keypair = Arc::new(init_jwt_keypair());
 
     // Create dataloaders
     let dish_loader = DataLoader::new(
@@ -69,8 +84,8 @@ async fn main() -> Result<(), ()> {
         tokio::spawn,
     );
 
-    // Create GraphQL schema and add dataloaders and DB pool to its context
-    let schema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
+    // Create GraphQL schema with dataloaders, DB pool and JWT keypair in its context
+    let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
         .data(dish_loader)
         .data(location_loader)
         .data(occurrence_loader)
@@ -78,14 +93,16 @@ async fn main() -> Result<(), ()> {
         .data(side_dish_loader)
         .data(tag_loader)
         .data(db_pool.clone())
+        .data(jwt_keypair.clone())
         .finish();
 
     let router = Router::new()
         .route("/", get(hello_world))
-        .route(
-            "/playground",
-            get(graphiql).post_service(GraphQL::new(schema)),
-        )
+        .route("/playground", get(graphiql).post(graphql_handler))
+        .with_state(AppState {
+            schema,
+            jwt_keypair,
+        })
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|_, _| true))
@@ -99,6 +116,28 @@ async fn main() -> Result<(), ()> {
         .unwrap();
 
     Ok(())
+}
+
+async fn graphql_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    req: GraphQLRequest,
+) -> GraphQLResponse {
+    // (Try to) extract JWT claims from Bearer token in Authorization header
+    let claims = headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer ")) // Extract Bearer value
+        .and_then(|token| verify_jwt(token, &state.jwt_keypair.decoding_key).ok()); // Verify if it's a valid JWT
+
+    println!("Request has claims: {:?}", claims);
+
+    // Add the (optional) claims into the AuthContext and execute the given query
+    state
+        .schema
+        .execute(req.into_inner().data(AuthContext { claims }))
+        .await
+        .into()
 }
 
 async fn graphiql() -> impl IntoResponse {
