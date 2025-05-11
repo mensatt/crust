@@ -2,6 +2,7 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
 use crate::graphql::queries::GqlReview;
 use crate::schema::reviews;
@@ -104,6 +105,8 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: CreateReviewInput,
     ) -> Result<GqlReview> {
+        // NOTE: No authentication on this mutation, as all users shall be able to create reviews
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -149,6 +152,9 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: UpdateReviewInput,
     ) -> Result<GqlReview> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -185,6 +191,9 @@ impl ReviewMutations {
         // TODO: Consider other response type
         //       Number of rows affected?, id of deleted object?, Query object before deletion?
     ) -> Result<bool> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -201,6 +210,8 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: AddImagesToReviewInput,
     ) -> Result<GqlReview> {
+        // NOTE: No auth on this mutation; all users shall be able to create reviews (with images)
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -233,6 +244,9 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: RemoveImagesFromReviewInput,
     ) -> Result<GqlReview> {
+        // NOTE: This mutation was/is not authenticated in the old backend.
+        // TODO: Reconsider if this is sane
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();

@@ -1,6 +1,7 @@
 use async_graphql::{dataloader::DataLoader, Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::{
     db::{
         conn::DbPool,
@@ -15,7 +16,7 @@ use crate::{
         queries::{GqlDish, GqlOccurrence, GqlTag},
         util::GqlDate,
     },
-    schema::{occurrences_side_dishes, occurrences_tags, occurrences, tags},
+    schema::{occurrences, occurrences_side_dishes, occurrences_tags, tags},
     DishLoader, OccurrenceLoader,
 };
 
@@ -194,6 +195,9 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: CreateOccurrenceInput,
     ) -> Result<GqlOccurrence> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -263,6 +267,9 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: UpdateOccurrenceInput,
     ) -> Result<GqlOccurrence> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -299,6 +306,9 @@ impl OccurrenceMutations {
         // TODO: Consider other response type
         //       Number of rows affected?, id of deleted object?, Query object before deletion?
     ) -> Result<bool> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -315,6 +325,9 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: AddSideDishToOccurrenceInput,
     ) -> Result<OccurrenceSideDish> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -336,6 +349,9 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: RemoveSideDishFromOccurrenceInput,
     ) -> Result<OccurrenceSideDish> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -358,6 +374,9 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: AddTagToOccurrenceInput,
     ) -> Result<OccurrenceTag> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -379,6 +398,9 @@ impl OccurrenceMutations {
         ctx: &Context<'_>,
         input: RemoveTagFromOccurrenceInput,
     ) -> Result<OccurrenceTag> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();

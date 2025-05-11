@@ -1,6 +1,7 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::db::{conn::DbPool, models::dish_alias::DbDishAlias};
 use crate::graphql::queries::GqlDishAlias;
 use crate::schema::dishes_aliases;
@@ -29,6 +30,9 @@ impl DishAliasMutations {
         ctx: &Context<'_>,
         input: CreateDishAliasInput,
     ) -> Result<GqlDishAlias> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -49,6 +53,9 @@ impl DishAliasMutations {
         // TODO: Consider other response type
         //       Number of rows affected?, id of deleted object?, Query object before deletion?
     ) -> Result<bool> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();

@@ -1,6 +1,7 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::db::{conn::DbPool, models::location::DbLocation};
 use crate::graphql::queries::GqlLocation;
 use crate::schema::locations;
@@ -34,6 +35,9 @@ impl LocationMutations {
         ctx: &Context<'_>,
         input: CreateLocationInput,
     ) -> Result<GqlLocation> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -52,6 +56,9 @@ impl LocationMutations {
         ctx: &Context<'_>,
         input: UpdateLocationInput,
     ) -> Result<GqlLocation> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();

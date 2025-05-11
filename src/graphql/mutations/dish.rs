@@ -1,6 +1,7 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::db::{conn::DbPool, models::dish::DbDish};
 use crate::graphql::queries::GqlDish;
 use crate::schema::dishes;
@@ -26,6 +27,9 @@ pub struct DishMutations;
 #[async_graphql::Object]
 impl DishMutations {
     pub async fn create_dish(&self, ctx: &Context<'_>, input: CreateDishInput) -> Result<GqlDish> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -47,6 +51,9 @@ impl DishMutations {
     }
 
     async fn update_dish(&self, ctx: &Context<'_>, input: UpdateDishInput) -> Result<GqlDish> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
