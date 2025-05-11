@@ -7,7 +7,7 @@ use argon2::{
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::auth::{create_jwt, Claims, JwtKeyPair};
+use crate::auth::{create_jwt, AuthContext, Claims, JwtKeyPair};
 use crate::db::{conn::DbPool, models::user::DbUser};
 use crate::graphql::queries::GqlUser;
 use crate::schema::users;
@@ -60,6 +60,10 @@ impl UserMutations {
     }
 
     async fn create_user(&self, ctx: &Context<'_>, input: CreateUserInput) -> Result<GqlUser> {
+        // Require authentication for this mutation
+        // TODO: Do we want to allow users to register themselves?
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();

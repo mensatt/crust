@@ -1,6 +1,7 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
+use crate::auth::AuthContext;
 use crate::db::{
     conn::DbPool,
     models::tag::{DbTag, TagPriority},
@@ -38,6 +39,9 @@ pub struct TagMutations;
 #[async_graphql::Object]
 impl TagMutations {
     async fn create_tag(&self, ctx: &Context<'_>, input: CreateTagInput) -> Result<GqlTag> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
@@ -52,6 +56,9 @@ impl TagMutations {
     }
 
     async fn update_tag(&self, ctx: &Context<'_>, input: UpdateTagInput) -> Result<GqlTag> {
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
+
         // Get DB connection
         let pool = ctx.data::<DbPool>()?;
         let conn = &mut pool.get().unwrap();
