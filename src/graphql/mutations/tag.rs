@@ -17,7 +17,7 @@ pub struct CreateTagInput {
     pub name: String,
     pub description: String,
     pub short_name: Option<String>,
-    pub priority: TagPriority,
+    pub priority: Option<TagPriority>,
     pub is_allergy: Option<bool>,
 }
 
