@@ -27,6 +27,4 @@ bigdecimal = "0.4" # For handling PgNumeric of avg() queries
 pq-sys = { version = "0.7", features = ["bundled"] }
 openssl-sys = { version = "0.9", features = ["vendored"] }
 # Config Stuff
-config = "0.15.6"
-# slab = "0.4.9"
-# futures = "0.3.30"
+config = "0.15.11"
