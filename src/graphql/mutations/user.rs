@@ -7,10 +7,13 @@ use argon2::{
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
 
-use crate::auth::{create_jwt, AuthContext, Claims, JwtKeyPair};
 use crate::db::{conn::DbPool, models::user::DbUser};
 use crate::graphql::queries::GqlUser;
 use crate::schema::users;
+use crate::{
+    auth::{create_jwt, AuthContext, Claims, JwtKeyPair},
+    config::AppConfig,
+};
 
 #[derive(Debug, InputObject)]
 pub struct CreateUserInput {
@@ -50,11 +53,12 @@ impl UserMutations {
             return Err(async_graphql::Error::new("Invalid email or password"));
         }
 
-        // Extract (reference to) encoding key from context
+        // Extract JWT lifetime and (reference to) encoding key from context
+        let jwt_lifetime = ctx.data::<AppConfig>()?.jwt.lifetime_in_secs;
         let encoding_key = &ctx.data::<Arc<JwtKeyPair>>()?.encoding_key;
         // Create JWT for this user
         // TODO: Error handling
-        let jwt = create_jwt(&Claims::new(user.email), encoding_key).unwrap();
+        let jwt = create_jwt(&Claims::new(user.email, jwt_lifetime), encoding_key).unwrap();
 
         Ok(jwt)
     }

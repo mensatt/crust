@@ -1,1 +1,9 @@
+# Ignore build output
 /target
+
+# Ignore sensitive files
+.env
+*.pem
+
+# Ignore config
+config.yml

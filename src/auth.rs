@@ -1,9 +1,16 @@
 use std::fs;
 
+use chrono::{Duration, Utc};
 use jsonwebtoken::errors::Result;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 
+use crate::config::JwtConfig;
+
+// NOTE: We don't include this in JwtConfig because changing the algorithm would probably
+//       require code changes anyway.
+//       For example, switching from RS256 to HS256 means we'd need to use the same key for
+//       both signing and verifying.
 pub const JWT_ALGO: Algorithm = Algorithm::RS256;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -15,15 +22,14 @@ pub struct Claims {
 }
 
 impl Claims {
-    pub fn new(user_id: String) -> Self {
-        let now = chrono::Utc::now();
+    pub fn new(user_id: String, lifetime_in_secs: i64) -> Self {
+        let now = Utc::now();
         let iat = now.timestamp();
         let nbf = now.timestamp();
-        // Token shall be valid for 24h from signing
-        let duration = chrono::Duration::hours(24);
+        // Token shall be valid for `lifetime_in_secs` seconds from signing
         let exp = now
-            .checked_add_signed(duration)
-            .expect("Adding 24h produced invalid timestamp")
+            .checked_add_signed(Duration::seconds(lifetime_in_secs))
+            .expect("Unable to compute claim expiry date")
             .timestamp();
 
         Claims {
@@ -40,10 +46,9 @@ pub struct JwtKeyPair {
     pub decoding_key: DecodingKey, // The public  key used to verify signatures
 }
 
-pub fn init_jwt_keypair() -> JwtKeyPair {
-    // TODO: Use config crate for paths
-    let private_key = fs::read("private_key.pem").expect("Failed to read private key");
-    let public_key = fs::read("public_key.pem").expect("Failed to read public key");
+pub fn init_jwt_keypair(jwt_config: &JwtConfig) -> JwtKeyPair {
+    let private_key = fs::read(&jwt_config.private_key_path).expect("Failed to read private key");
+    let public_key = fs::read(&jwt_config.public_key_path).expect("Failed to read public key");
 
     let encoding_key =
         EncodingKey::from_rsa_pem(&private_key).expect("Failed to create encoding key");

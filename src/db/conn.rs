@@ -1,14 +1,14 @@
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 
+use crate::config::DatabaseConfig;
+
 // Type alias to simplify code
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 
-pub fn get_db_pool() -> DbPool {
-    // TODO: Use config crate
-    let database_url = "postgres://mensatt:S3cret@localhost:5432/new-mensatt";
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
+pub fn create_db_pool(db_config: &DatabaseConfig) -> DbPool {
+    let manager = ConnectionManager::<PgConnection>::new(db_config.url());
     Pool::builder()
         .build(manager)
-        .expect("Unable to create pool.")
+        .expect("Unable to create pool")
 }
