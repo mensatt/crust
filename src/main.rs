@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod config;
 pub mod db;
 pub mod graphql;
 pub mod schema;
@@ -18,7 +19,8 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::auth::{init_jwt_keypair, verify_jwt, AuthContext, JwtKeyPair};
-use crate::db::conn::get_db_pool;
+use crate::config::AppConfig;
+use crate::db::conn::create_db_pool;
 use crate::graphql::dataloaders::*;
 use crate::graphql::schema::*;
 
@@ -34,17 +36,20 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
+    // Load config
+    let config = AppConfig::load().expect("Unable to load configuration");
+
+    // Create JWT keypair
+    let jwt_keypair = Arc::new(init_jwt_keypair(&config.jwt));
+
     // Create database connection pool
-    let db_pool = get_db_pool();
+    let db_pool = create_db_pool(&config.database);
 
     // Run pending migrations
     // NOTE: We assume there already is database with the right name
     let mut conn = db_pool.get().expect("Failed to get connection from pool");
     conn.run_pending_migrations(MIGRATIONS)
         .expect("Failed to apply pending migrations");
-
-    // Read JWT keypair
-    let jwt_keypair = Arc::new(init_jwt_keypair());
 
     // Create dataloaders
     let dish_loader = DataLoader::new(
@@ -84,7 +89,7 @@ async fn main() -> Result<(), ()> {
         tokio::spawn,
     );
 
-    // Create GraphQL schema with dataloaders, DB pool and JWT keypair in its context
+    // Create GraphQL schema with dataloaders, DB pool, JWT keypair and config in its context
     let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
         .data(dish_loader)
         .data(location_loader)
@@ -94,6 +99,7 @@ async fn main() -> Result<(), ()> {
         .data(tag_loader)
         .data(db_pool.clone())
         .data(jwt_keypair.clone())
+        .data(config)
         .finish();
 
     let router = Router::new()

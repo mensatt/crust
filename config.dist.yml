@@ -1,0 +1,16 @@
+# Complete configuration with default values.
+# Properties are optional; missing properties will be filled with their defaults.
+# You can also use MENSATT_<nested>_<property> env variables to set/override values specified here.
+# E.g. you might set MENSATT_DATABASE_HOST=some-host to temporarily use a different host.
+# See src/config.rs for more details.
+database:
+  user: "mensatt"
+  password: "password"
+  host: "localhost"
+  port: 5432
+  name: "mensatt"
+
+jwt:
+  private_key_path: "private_key.pem"
+  public_key_path: "public_key.pem"
+  lifetime_in_secs: 86400 # == one day
