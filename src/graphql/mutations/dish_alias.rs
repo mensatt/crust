@@ -1,9 +1,12 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
+use diesel::result::Error::NotFound;
 
 use crate::auth::AuthContext;
-use crate::db::{conn::DbPool, models::dish_alias::DbDishAlias};
+use crate::db::models::dish_alias::DbDishAlias;
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlDishAlias;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::dishes_aliases;
 
 #[derive(Debug, InputObject, Insertable)]
@@ -34,14 +37,17 @@ impl DishAliasMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Add dish alias and return it
         let results = diesel::insert_into(dishes_aliases::table)
             .values(&input)
             .get_result::<DbDishAlias>(conn)
-            .expect("Error saving new dish alias");
+            // NOTE: In theory .get_result() could return NotFound, but if that happens on insert
+            //       something internally has gone wrong.
+            .map_err(|e| {
+                GqlApiError::internal("Error while inserting new dish alias", e.to_string())
+            })?;
 
         Ok(results.into())
     }
@@ -57,13 +63,24 @@ impl DishAliasMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         diesel::delete(dishes_aliases::table)
-            .filter(dishes_aliases::alias_name.eq(input.alias_name))
+            .filter(dishes_aliases::alias_name.eq(&input.alias_name))
             .execute(conn)
-            .expect("Failed to delete dish alias");
+            .map_err(|e| match e {
+                NotFound => GqlApiError::not_found(format!(
+                    "Dish alias with name '{}' not found",
+                    input.alias_name
+                )),
+                _ => GqlApiError::internal(
+                    format!(
+                        "Error while deleting dish alias with name '{}'",
+                        input.alias_name
+                    ),
+                    e.to_string(),
+                ),
+            })?;
 
         Ok(true)
     }

@@ -1,5 +1,8 @@
 use chrono::TimeZone;
 
+use crate::db::conn::{DbConn, DbPool};
+use crate::graphql::error::GqlApiError;
+
 // Alias that renames chrono's NaiveDate to Date in the GraphQL schema
 #[derive(async_graphql::NewType, Debug, Clone, Copy)]
 #[graphql(name = "Date")]
@@ -31,4 +34,17 @@ impl From<chrono::DateTime<chrono::Utc>> for GqlTimestamp {
             .to_rfc3339_opts(chrono::SecondsFormat::Micros, true)
             .into()
     }
+}
+
+// Helper function to get a connection via the schema context with appropriate error conversion
+pub fn get_conn_from_ctx(ctx: &async_graphql::Context) -> async_graphql::Result<DbConn> {
+    let pool = ctx
+        .data::<DbPool>()
+        .map_err(|e| GqlApiError::internal("Unable to get pool from context.", e.message))?;
+
+    let conn = pool
+        .get()
+        .map_err(|e| GqlApiError::internal("Unable to get connection from pool.", e.to_string()))?;
+
+    Ok(conn)
 }

@@ -1,9 +1,12 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
+use diesel::result::Error::NotFound;
 
 use crate::auth::AuthContext;
-use crate::db::{conn::DbPool, models::dish::DbDish};
+use crate::db::models::dish::DbDish;
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlDish;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::dishes;
 
 #[derive(Debug, InputObject)]
@@ -31,8 +34,7 @@ impl DishMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Construct new dish
         let new_dish = DbDish {
@@ -45,7 +47,9 @@ impl DishMutations {
         let results: DbDish = diesel::insert_into(dishes::table)
             .values(&new_dish)
             .get_result(conn)
-            .expect("Error saving new dish");
+            // NOTE: In theory .get_result() could return NotFound, but if that happens on insert
+            //       something internally has gone wrong.
+            .map_err(|e| GqlApiError::internal("Error while inserting new dish", e.to_string()))?;
 
         Ok(results.into())
     }
@@ -55,8 +59,7 @@ impl DishMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Try to update, map empty changeset to None (instead of Error)
         let pot_empty_changeset = diesel::update(dishes::table)
@@ -64,17 +67,34 @@ impl DishMutations {
             .set(&input)
             .get_result(conn)
             .optional_empty_changeset()
-            .expect("Error while updating dish");
+            .map_err(|e| match e {
+                NotFound => {
+                    GqlApiError::not_found(format!("Dish with ID '{}' not found", input.id))
+                }
+                _ => GqlApiError::internal(
+                    format!("Error while updating dish with ID '{}'", input.id),
+                    e.to_string(),
+                ),
+            })?;
 
         // Use non-empty changeset if present and fall back to querying otherwise
-        let result = pot_empty_changeset.unwrap_or_else(|| {
-            // Fallback query that returns the dish as it is stored in the databse
-            dishes::table
+        let result = match pot_empty_changeset {
+            Some(dish) => dish,
+            // Fallback query that returns the dish as it is stored in the database
+            None => dishes::table
                 .filter(dishes::id.eq(input.id))
                 .select(DbDish::as_select())
-                .first(conn)
-                .expect("Unable to get updated dish")
-        });
+                .first::<DbDish>(conn)
+                .map_err(|e| match e {
+                    NotFound => {
+                        GqlApiError::not_found(format!("Dish with ID '{}' not found", input.id))
+                    }
+                    _ => GqlApiError::internal(
+                        format!("Error while updating dish with ID '{}'", input.id),
+                        e.to_string(),
+                    ),
+                })?,
+        };
 
         Ok(result.into())
     }
