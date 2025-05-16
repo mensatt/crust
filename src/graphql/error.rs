@@ -18,6 +18,9 @@ pub enum GqlApiError {
     },
     // An error indicating that some requested entry was not not found
     NotFound(String),
+    // An error indicating that invalid (login) credentials were provided
+    // Currently only used in loginUser mutation
+    InvalidCredentials,
 }
 
 impl From<GqlApiError> for async_graphql::Error {
@@ -39,6 +42,10 @@ impl From<GqlApiError> for async_graphql::Error {
                 Error::new("Encountered an internal error while processing this request. See server logs for more details.")
             }
             GqlApiError::NotFound(msg) => Error::new(msg),
+            GqlApiError::InvalidCredentials => {
+                log::warn!("Failed login attempt (wrong credentials)!");
+                Error::new("Invalid email or password")
+            }
         }
     }
 }
