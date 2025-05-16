@@ -1,10 +1,13 @@
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
+use log::debug;
 
+use crate::db::models::dish::DbDish;
 use crate::db::models::dish_alias::DbDishAlias;
-use crate::db::{conn::DbPool, models::dish::DbDish};
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::ReviewFilter;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::{dishes, dishes_aliases};
 use crate::DishLoader;
 
@@ -21,15 +24,31 @@ pub struct GqlDishAlias {
     pub dish_id: uuid::Uuid,
 }
 
+// TODO: Extract to own file
 #[async_graphql::ComplexObject]
 impl GqlDishAlias {
     async fn dish(&self, ctx: &Context<'_>) -> Result<GqlDish> {
-        // println!("Loading dish for {}", self.dish_id);
-        let loader = ctx.data::<DataLoader<DishLoader>>()?;
+        debug!("Loading dish with ID '{}' within alias", self.dish_id);
+
+        let loader = ctx.data::<DataLoader<DishLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get DishLoader from context", e.message)
+        })?;
+
         let dish = loader
             .load_one(self.dish_id)
-            .await?
-            .ok_or("Dish not found")?;
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load dish with ID '{}' within alias via dish loader",
+                        self.dish_id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Dish with ID '{}' not found", self.dish_id))
+            })?;
         Ok(dish.into())
     }
 }
@@ -64,22 +83,37 @@ impl From<DbDish> for GqlDish {
 
 #[async_graphql::ComplexObject]
 impl GqlDish {
-    async fn review_data(&self, _ctx: &Context<'_>, filter: Option<ReviewFilter>) -> Result<GqlReviewDataDish> {
+    async fn review_data(
+        &self,
+        _ctx: &Context<'_>,
+        filter: Option<ReviewFilter>,
+    ) -> Result<GqlReviewDataDish> {
         // NOTE: Resolving fields for review_data is handled by the review and metadata
         //       resolvers of GqlReviewDataDish
-        Ok(GqlReviewDataDish { dish_id: self.id, filter})
+        Ok(GqlReviewDataDish {
+            dish_id: self.id,
+            filter,
+        })
     }
 
     async fn aliases(&self, ctx: &Context<'_>) -> Result<Vec<GqlDishAlias>> {
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         let results = dishes_aliases::table
             .filter(dishes_aliases::dish.eq(self.id))
             .select(DbDishAlias::as_select())
             .load(conn)
-            .expect("Error loading dish aliases");
+            .map_err(|e| {
+                // NOTE: load will not return NotFound, so no need to match on error here
+                GqlApiError::internal(
+                    format!(
+                        "Error while fetching dish aliases for dish with ID '{}'",
+                        self.id
+                    ),
+                    e.to_string(),
+                )
+            })?;
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
@@ -99,14 +133,13 @@ impl DishQueries {
     async fn dishes(&self, ctx: &Context<'_>, filter: Option<DishFilter>) -> Result<Vec<GqlDish>> {
         // NOTE: Using the DishLoader is not beneficial here since (for now) we don't filter on ids
 
-        // Get DB conn
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        // Get DB connection
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Construct query
         let mut query = dishes::table.select(DbDish::as_select()).into_boxed();
 
-        // Add neccessary clauses depending on present filter values
+        // Add necessary clauses depending on present filter values
         if let Some(f) = filter {
             if let Some(filter_dishes) = f.dishes {
                 query = query.filter(dishes::id.eq_any(filter_dishes));
@@ -120,7 +153,9 @@ impl DishQueries {
         }
 
         // Return results
-        let results: Vec<DbDish> = query.load(conn).expect("Error loading dishes");
+        let results: Vec<DbDish> = query
+            .load(conn)
+            .map_err(|e| GqlApiError::internal("Error while loading dishes", e.to_string()))?;
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
