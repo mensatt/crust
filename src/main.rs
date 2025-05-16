@@ -6,6 +6,7 @@ pub mod schema;
 
 use std::sync::Arc;
 
+use anyhow::Context;
 use async_graphql::{dataloader::DataLoader, http::GraphiQLSource, EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
@@ -16,6 +17,7 @@ use axum::{
     Router,
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
+use log::{debug, info};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::auth::{init_jwt_keypair, verify_jwt, AuthContext, JwtKeyPair};
@@ -35,21 +37,29 @@ pub struct AppState {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), ()> {
+async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     // Load config
-    let config = AppConfig::load().expect("Unable to load configuration");
+    let config = AppConfig::load()?;
 
     // Create JWT keypair
-    let jwt_keypair = Arc::new(init_jwt_keypair(&config.jwt));
+    let jwt_keypair = Arc::new(init_jwt_keypair(&config.jwt)?);
 
     // Create database connection pool
-    let db_pool = create_db_pool(&config.database);
+    let db_pool = create_db_pool(&config.database)?;
 
     // Run pending migrations
     // NOTE: We assume there already is database with the right name
-    let mut conn = db_pool.get().expect("Failed to get connection from pool");
-    conn.run_pending_migrations(MIGRATIONS)
-        .expect("Failed to apply pending migrations");
+    db_pool
+        .get()
+        .context("Unable to get connection from DB pool to run migrations")?
+        .run_pending_migrations(MIGRATIONS)
+        // Map to anyhow-compatible error
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("Unable to apply migrations")?;
+
+    info!("Pending migrations applied successfully");
 
     // Create dataloaders
     let dish_loader = DataLoader::new(
@@ -115,13 +125,20 @@ async fn main() -> Result<(), ()> {
                 .allow_methods([Method::GET, Method::POST]),
         );
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    // TODO: Make configurable
+    const ADDR_AND_PORT: &str = "0.0.0.0:8000";
+    let listener = tokio::net::TcpListener::bind(ADDR_AND_PORT)
+        .await
+        .context(format!(
+            "Failed to create TcpListener for '{ADDR_AND_PORT}'"
+        ))?;
 
+    info!("Starting axum server on '{ADDR_AND_PORT}'");
     axum::serve(listener, router.into_make_service())
         .await
-        .unwrap();
+        .context("Failed to start axum server")?;
 
-    Ok(())
+    Ok(()) // This will likely never be reached
 }
 
 async fn graphql_handler(
@@ -135,6 +152,10 @@ async fn graphql_handler(
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer ")) // Extract Bearer value
         .and_then(|token| verify_jwt(token, &state.jwt_keypair.decoding_key).ok()); // Verify if it's a valid JWT
+
+    if let Some(ref claims) = claims {
+        debug!("Authenticated request with claims {:?}", claims);
+    }
 
     // Add the (optional) claims into the AuthContext and execute the given query
     state

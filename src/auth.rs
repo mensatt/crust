@@ -1,8 +1,10 @@
 use std::fs;
 
+use anyhow::Context;
 use chrono::{Duration, Utc};
 use jsonwebtoken::errors::Result;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::config::JwtConfig;
@@ -46,19 +48,33 @@ pub struct JwtKeyPair {
     pub decoding_key: DecodingKey, // The public  key used to verify signatures
 }
 
-pub fn init_jwt_keypair(jwt_config: &JwtConfig) -> JwtKeyPair {
-    let private_key = fs::read(&jwt_config.private_key_path).expect("Failed to read private key");
-    let public_key = fs::read(&jwt_config.public_key_path).expect("Failed to read public key");
+pub fn init_jwt_keypair(jwt_config: &JwtConfig) -> anyhow::Result<JwtKeyPair> {
+    let private_key = fs::read(&jwt_config.private_key_path).with_context(|| {
+        format!(
+            "Failed to read private key from {}",
+            jwt_config.private_key_path
+        )
+    })?;
 
-    let encoding_key =
-        EncodingKey::from_rsa_pem(&private_key).expect("Failed to create encoding key");
-    let decoding_key =
-        DecodingKey::from_rsa_pem(&public_key).expect("Failed to create decoding key");
+    let public_key = fs::read(&jwt_config.public_key_path).with_context(|| {
+        format!(
+            "Failed to read public key from {}",
+            jwt_config.public_key_path
+        )
+    })?;
 
-    JwtKeyPair {
+    let encoding_key = EncodingKey::from_rsa_pem(&private_key)
+        .context("Failed to create encoding key from private key")?;
+
+    let decoding_key = DecodingKey::from_rsa_pem(&public_key)
+        .context("Failed to create decoding key from public key")?;
+
+    info!("Successfully created JWT keypair");
+
+    Ok(JwtKeyPair {
         encoding_key,
         decoding_key,
-    }
+    })
 }
 
 pub fn create_jwt(claims: &Claims, encoding_key: &EncodingKey) -> Result<String> {

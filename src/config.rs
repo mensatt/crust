@@ -1,6 +1,8 @@
 use std::env;
 
+use anyhow::Context;
 use config::{Config, Environment, File};
+use log::{debug, info};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -62,16 +64,26 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn load() -> Result<Self, config::ConfigError> {
+    pub fn load() -> anyhow::Result<Self> {
         // If set, read config from CONFIG_PATH env variable, if not try to read from default path
         let config_path = env::var("CONFIG_PATH").unwrap_or_else(|_| "config.yml".to_string());
+
         // Load config; environment variables take priority over config file
-        Config::builder()
+        debug!("Loading configuration from '{}'", config_path);
+        let config = Config::builder()
             // Loads values from config_path (if present)
             .add_source(File::with_name(&config_path).required(false))
             // Allow specificing config properites via variables named `MENSATT_<property>`
             .add_source(Environment::with_prefix("MENSATT").separator("_"))
-            .build()?
+            .build()
+            .context("Faled to build configuration")?;
+        let deserialized: Self = config
             .try_deserialize()
+            .context("Failed to deserialize configuration")?;
+
+        info!("Config loaded successfully");
+        debug!("Config is {:?}", deserialized);
+
+        Ok(deserialized)
     }
 }
