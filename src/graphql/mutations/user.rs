@@ -1,14 +1,19 @@
 use std::sync::Arc;
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+    password_hash::{
+        errors::Error as PasswordHashError, rand_core::OsRng, PasswordHasher, SaltString,
+    },
     Argon2, PasswordHash, PasswordVerifier,
 };
 use async_graphql::{Context, InputObject, Result};
-use diesel::prelude::*;
+use diesel::{prelude::*, result::Error as DieselError};
+use log::info;
 
-use crate::db::{conn::DbPool, models::user::DbUser};
+use crate::db::models::user::DbUser;
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlUser;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::users;
 use crate::{
     auth::{create_jwt, AuthContext, Claims, JwtKeyPair},
@@ -34,31 +39,58 @@ pub struct UserMutations;
 impl UserMutations {
     async fn login_user(&self, ctx: &Context<'_>, input: LoginUserInput) -> Result<String> {
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Check if there is a user with the given email
         let user = users::table
-            .filter(users::email.eq(input.email))
+            .filter(users::email.eq(&input.email))
             .first::<DbUser>(conn)
-            .map_err(|_| async_graphql::Error::new("Invalid email or password"))?;
+            .map_err(|e| match e {
+                DieselError::NotFound => GqlApiError::InvalidCredentials,
+                _ => GqlApiError::internal(
+                    format!("Error while fetching user '{}'", input.email),
+                    e.to_string(),
+                ),
+            })?;
 
-        // Check given password against hash from DB
+        // Parse hash from DB and check if given password matches it
         // TODO: Think about if we want to support old bcrypt hashes
-        let parsed_hash = PasswordHash::new(&user.password_hash)?;
-        let password_ok = Argon2::default()
+        let parsed_hash = PasswordHash::new(&user.password_hash).map_err(|e| {
+            GqlApiError::internal(
+                format!(
+                    "Unable to read password hash '{}' of user '{}'",
+                    user.password_hash, user.email
+                ),
+                e.to_string(),
+            )
+        })?;
+        Argon2::default()
             .verify_password(input.password.as_bytes(), &parsed_hash)
-            .is_ok();
-        if !password_ok {
-            return Err(async_graphql::Error::new("Invalid email or password"));
-        }
+            // Error handling
+            .map_err(|e| match e {
+                PasswordHashError::Password => GqlApiError::InvalidCredentials,
+                _ => GqlApiError::internal(
+                    format!("Unable to verify password for user '{}'", input.email),
+                    e.to_string(),
+                ),
+            })?;
 
         // Extract JWT lifetime and (reference to) encoding key from context
-        let jwt_lifetime = ctx.data::<AppConfig>()?.jwt.lifetime_in_secs;
-        let encoding_key = &ctx.data::<Arc<JwtKeyPair>>()?.encoding_key;
+        let jwt_lifetime = ctx
+            .data::<AppConfig>()
+            .map_err(|e| GqlApiError::internal("Unable to get AppConfig from context", e.message))?
+            .jwt
+            .lifetime_in_secs;
+        let encoding_key = &ctx
+            .data::<Arc<JwtKeyPair>>()
+            .map_err(|e| GqlApiError::internal("Unable to get JwtKeyPair from context", e.message))?
+            .encoding_key;
+
         // Create JWT for this user
-        // TODO: Error handling
-        let jwt = create_jwt(&Claims::new(user.email, jwt_lifetime), encoding_key).unwrap();
+        let jwt = create_jwt(&Claims::new(user.email, jwt_lifetime), encoding_key)
+            .map_err(|e| GqlApiError::internal("Unable to create JWT", e.to_string()))?;
+
+        info!("User '{}' logged in successfully", input.email);
 
         Ok(jwt)
     }
@@ -69,8 +101,7 @@ impl UserMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Generate random salt for password hash
         let salt = SaltString::generate(&mut OsRng);
@@ -80,7 +111,10 @@ impl UserMutations {
 
         // Hash password to PHC string ($argon2id$v=19$...)
         let password_hash = argon2
-            .hash_password(input.password.as_bytes(), &salt)?
+            .hash_password(input.password.as_bytes(), &salt)
+            .map_err(|e| {
+                GqlApiError::internal("Unable to create hash for new user", e.to_string())
+            })?
             .to_string();
 
         let now = chrono::Utc::now();
@@ -96,7 +130,9 @@ impl UserMutations {
         let results = diesel::insert_into(users::table)
             .values(&new_user)
             .get_result::<DbUser>(conn)
-            .expect("Error saving new user");
+            // NOTE: In theory .get_result() could return NotFound, but if that happens on insert
+            //       something internally has gone wrong.
+            .map_err(|e| GqlApiError::internal("Error while inserting new user", e.to_string()))?;
 
         Ok(results.into())
     }
