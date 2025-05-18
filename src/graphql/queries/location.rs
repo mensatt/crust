@@ -1,7 +1,9 @@
 use async_graphql::{Context, InputObject, SimpleObject};
 use diesel::prelude::*;
 
-use crate::db::{conn::DbPool, models::location::DbLocation};
+use crate::db::models::location::DbLocation;
+use crate::graphql::error::GqlApiError;
+use crate::graphql::util::get_conn_from_ctx;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "Location")]
@@ -45,8 +47,7 @@ impl LocationQueries {
         // NOTE: Using the LocationLoader is not beneficial here since we don't exclusively filter on ids
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Construct query
         let mut query = locations.select(DbLocation::as_select()).into_boxed();
@@ -68,7 +69,10 @@ impl LocationQueries {
         }
 
         // Execute query and return results
-        let results = query.load(conn).expect("Error loading locations");
+        let results = query
+            .load(conn)
+            .map_err(|e| GqlApiError::internal("Error while loading locations", e.to_string()))?;
+
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
