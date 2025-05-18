@@ -1,11 +1,14 @@
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
+use log::debug;
 
 use crate::graphql::dataloaders::{DishLoader, LocationLoader, SideDishLoader, TagLoader};
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::ReviewFilter;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::{
-    db::{conn::DbPool, models::occurrence::DbOccurrence},
+    db::models::occurrence::DbOccurrence,
     graphql::{
         queries::{GqlDish, GqlLocation, GqlReviewDataOccurrence, GqlTag},
         util::{GqlDate, GqlTimestamp},
@@ -52,40 +55,108 @@ pub struct OccurrenceFilter {
 #[async_graphql::ComplexObject]
 impl GqlOccurrence {
     async fn location(&self, ctx: &Context<'_>) -> Result<GqlLocation> {
-        // println!("Loading location_id for {}", self.location_id);
-        let loader = ctx.data::<DataLoader<LocationLoader>>()?;
+        debug!(
+            "Loading location with ID '{}' for occurrence with ID '{}'",
+            self.location_id, self.id
+        );
+
+        let loader = ctx.data::<DataLoader<LocationLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get LocationLoader from context", e.message)
+        })?;
+
         let loc = loader
             .load_one(self.location_id)
-            .await?
-            .ok_or("Location not found")?;
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load location with ID '{}' within occurrence via location loader",
+                        self.location_id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Location with ID '{}' not found", self.location_id))
+            })?;
         Ok(loc.into())
     }
 
     async fn dish(&self, ctx: &Context<'_>) -> Result<GqlDish> {
-        // println!("Loading dish for {}", self.dish_id);
-        let loader = ctx.data::<DataLoader<DishLoader>>()?;
+        debug!(
+            "Loading dish with ID '{}' for occurrence with ID '{}'",
+            self.dish_id, self.id
+        );
+
+        let loader = ctx.data::<DataLoader<DishLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get DishLoader from context", e.message)
+        })?;
+
         let dish = loader
             .load_one(self.dish_id)
-            .await?
-            .ok_or("Dish not found")?;
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load dish with ID '{}' within occurrence via dish loader",
+                        self.dish_id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Dish with ID '{}' not found", self.dish_id))
+            })?;
         Ok(dish.into())
     }
 
     async fn tags(&self, ctx: &Context<'_>) -> Result<Vec<GqlTag>> {
-        // println!("Loading tags for {}", self.id);
-        let loader = ctx.data::<DataLoader<TagLoader>>()?;
-        let tags = loader.load_one(self.id).await?.unwrap_or_else(Vec::new);
+        debug!("Loading tags for occurrence with ID '{}'", self.id);
+        let loader = ctx.data::<DataLoader<TagLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get TagLoader from context", e.message)
+        })?;
+        let tags = loader
+            .load_one(self.id)
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load tags for occurrence with ID '{}' via tags loader",
+                        self.id
+                    ),
+                    e.message,
+                )
+            })?
+            .unwrap_or_else(Vec::new);
         Ok(tags.into_iter().map(Into::into).collect())
     }
 
     async fn side_dishes(&self, ctx: &Context<'_>) -> Result<Vec<GqlDish>> {
-        // println!("Loading side dishes for {}", self.id);
-        let loader = ctx.data::<DataLoader<SideDishLoader>>()?;
-        let side_dishes = loader.load_one(self.id).await?.unwrap_or_else(Vec::new);
+        debug!("Loading side dishes for occurrence with ID '{}'", self.id);
+        let loader = ctx.data::<DataLoader<SideDishLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get SideDishLoader from context", e.message)
+        })?;
+        let side_dishes = loader
+            .load_one(self.id)
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load side dishes for occurrence with ID '{}' via side dish loader",
+                        self.id
+                    ),
+                    e.message,
+                )
+            })?
+            .unwrap_or_else(Vec::new);
         Ok(side_dishes.into_iter().map(Into::into).collect())
     }
 
-    async fn review_data(&self, _ctx: &Context<'_>, filter: Option<ReviewFilter>) -> Result<GqlReviewDataOccurrence> {
+    async fn review_data(
+        &self,
+        _ctx: &Context<'_>,
+        filter: Option<ReviewFilter>,
+    ) -> Result<GqlReviewDataOccurrence> {
         // NOTE: Resolving fields for review_data is handled by the review and metadata
         //       resolvers of GqlReviewDataOccurrence
         Ok(GqlReviewDataOccurrence {
@@ -131,14 +202,14 @@ impl OccurrenceQueries {
         filter: Option<OccurrenceFilter>,
     ) -> Result<Vec<GqlOccurrence>> {
         use crate::schema::occurrences::dsl::*;
+
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Construct query
         let mut query = occurrences.select(DbOccurrence::as_select()).into_boxed();
 
-        // Add neccessary clauses depending on present filter values
+        // Add necessary clauses depending on present filter values
         if let Some(f) = filter {
             if let Some(filter_occurrences) = f.occurrences {
                 query = query.filter(id.eq_any(filter_occurrences));
@@ -160,7 +231,9 @@ impl OccurrenceQueries {
         }
 
         // Fetch required occurrences
-        let data = query.load(conn).expect("Error loading occurrences");
+        let data = query
+            .load(conn)
+            .map_err(|e| GqlApiError::internal("Error while loading occurrences", e.to_string()))?;
 
         // Convert from DbOccurrence to GqlOccurrence
         Ok(data.into_iter().map(Into::into).collect())
