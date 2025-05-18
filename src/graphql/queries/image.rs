@@ -1,9 +1,12 @@
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Result, SimpleObject};
 use diesel::prelude::*;
+use log::debug;
 
-use crate::db::{conn::DbPool, models::image::DbImage};
+use crate::db::models::image::DbImage;
 use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
+use crate::graphql::error::GqlApiError;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::images::dsl::*;
 
 use super::GqlReview;
@@ -30,13 +33,31 @@ impl From<DbImage> for GqlImage {
 #[async_graphql::ComplexObject]
 impl GqlImage {
     async fn review(&self, ctx: &Context<'_>) -> Result<GqlReview> {
-        // println!("Loading review for image_id {}", self.id);
-        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
+        debug!(
+            "Loading review with ID '{}' for image with ID '{}'",
+            self.review_id, self.id
+        );
+
+        let loader = ctx.data::<DataLoader<ReviewLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get ReviewLoader from context", e.message)
+        })?;
+
         let rev = loader
             .load_one(ReviewLoaderKey::ByReviewId { id: self.review_id })
-            .await?
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load review with ID '{}' within image via review loader",
+                        self.review_id
+                    ),
+                    e.message,
+                )
+            })?
             .and_then(|v| v.into_iter().next())
-            .expect("Review not found");
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Review with ID '{}' not found", self.review_id))
+            })?;
         Ok(rev.into())
     }
 }
@@ -49,13 +70,14 @@ impl ImageQueries {
     // TODO: Remove this query? It was not in the previous backend
     async fn images(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<GqlImage>> {
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Construct and execute query
         // TODO: If this query is kept, add a filter for approved images when not authenticated here
         let query = images.select(DbImage::as_select());
-        let results = query.load(conn).expect("Error loading images");
+        let results = query
+            .load(conn)
+            .map_err(|e| GqlApiError::internal("Error while loading images", e.to_string()))?;
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
