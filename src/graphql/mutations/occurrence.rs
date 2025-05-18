@@ -1,16 +1,17 @@
 use async_graphql::{dataloader::DataLoader, Context, InputObject, Result};
 use diesel::prelude::*;
+use diesel::result::Error::NotFound;
+use log::warn;
 
 use crate::auth::AuthContext;
+use crate::graphql::error::GqlApiError;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::{
-    db::{
-        conn::DbPool,
-        models::{
-            occurrence::{DbOccurrence, DbOccurrenceChangeset},
-            occurrence_side_dish::DbOccurrenceSideDish,
-            occurrence_tag::DbOccurrenceTag,
-            tag::DbTag,
-        },
+    db::models::{
+        occurrence::{DbOccurrence, DbOccurrenceChangeset},
+        occurrence_side_dish::DbOccurrenceSideDish,
+        occurrence_tag::DbOccurrenceTag,
+        tag::DbTag,
     },
     graphql::{
         queries::{GqlDish, GqlOccurrence, GqlTag},
@@ -103,20 +104,48 @@ pub struct OccurrenceSideDish {
 #[async_graphql::Object]
 impl OccurrenceSideDish {
     async fn occurrence(&self, ctx: &Context<'_>) -> Result<GqlOccurrence> {
-        let loader = ctx.data::<DataLoader<OccurrenceLoader>>()?;
+        let loader = ctx.data::<DataLoader<OccurrenceLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get OccurrenceLoader from context", e.message)
+        })?;
         let occ = loader
             .load_one(self.occurrence_id)
-            .await?
-            .ok_or("Occurrence not found")?;
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load occurrence with ID '{}' within occurrence side dish via occurrence loader",
+                        self.occurrence_id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Occurrence with ID '{}' not found", self.occurrence_id))
+            })?;
+
         Ok(occ.into())
     }
 
     async fn dish(&self, ctx: &Context<'_>) -> Result<GqlDish> {
-        let loader = ctx.data::<DataLoader<DishLoader>>()?;
+        let loader = ctx.data::<DataLoader<DishLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get DishLoader from context", e.message)
+        })?;
+
         let dish = loader
             .load_one(self.dish_id)
-            .await?
-            .ok_or("Dish not found")?;
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load dish with ID '{}' within occurrence side dish via dish loader",
+                        self.dish_id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Dish with ID '{}' not found", self.dish_id))
+            })?;
         Ok(dish.into())
     }
 }
@@ -130,23 +159,45 @@ pub struct OccurrenceTag {
 #[async_graphql::Object]
 impl OccurrenceTag {
     async fn occurrence(&self, ctx: &Context<'_>) -> Result<GqlOccurrence> {
-        let loader = ctx.data::<DataLoader<OccurrenceLoader>>()?;
+        let loader = ctx.data::<DataLoader<OccurrenceLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get OccurrenceLoader from context", e.message)
+        })?;
         let occ = loader
             .load_one(self.occurrence_id)
-            .await?
-            .ok_or("Occurrence not found")?;
+            .await.map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load occurrence with ID '{}' within occurrence tag via occurrence loader",
+                        self.occurrence_id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Occurrence with ID '{}' not found", self.occurrence_id))
+            })?;
         Ok(occ.into())
     }
 
     async fn tag(&self, ctx: &Context<'_>) -> Result<GqlTag> {
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         let tag = tags::table
             .filter(tags::key.eq(&self.tag_id))
             .first::<DbTag>(conn)
-            .expect("Error loading tag");
+            .map_err(|e| match e {
+                NotFound => {
+                    GqlApiError::not_found(format!("Tag with ID '{}' not found", self.tag_id))
+                }
+                _ => GqlApiError::internal(
+                    format!(
+                        "Error while querying tag with ID '{}' for occurrence ID '{}'",
+                        self.tag_id, self.occurrence_id
+                    ),
+                    e.to_string(),
+                ),
+            })?;
         Ok(tag.into())
     }
 }
@@ -199,15 +250,22 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
+
+        // Convert given GqlDate into timestamp or use current time as fallback
+        let date = input.date.map(Into::into).unwrap_or_else(|| {
+                warn!(
+                    "Unable to convert GqlDate '{:?}' to chrono date. Using current date and time as fallback",
+                    input.date
+                );
+            chrono::Utc::now()
+        });
 
         let new_occurrence = DbOccurrence {
             id: uuid::Uuid::new_v4(),
             location: input.location,
             dish: input.dish,
-            // Convert given GqlDate into timestamp or use current time as fallback
-            date: input.date.map(Into::into).unwrap_or_else(chrono::Utc::now),
+            date,
             kj: input.kj,
             kcal: input.kcal,
             fat: input.fat,
@@ -231,7 +289,11 @@ impl OccurrenceMutations {
         let result = diesel::insert_into(occurrences::table)
             .values(&new_occurrence)
             .get_result::<DbOccurrence>(conn)
-            .expect("Error saving new occurrence");
+            // NOTE: In theory .get_result() could return NotFound, but if that happens on insert
+            //       something internally has gone wrong.
+            .map_err(|e| {
+                GqlApiError::internal("Error while inserting new occurrence", e.to_string())
+            })?;
 
         // If present, insert side dishes for occurrence
         if let Some(side_dish_ids) = input.side_dishes {
@@ -242,7 +304,12 @@ impl OccurrenceMutations {
                         dish: side_dish_id,
                     })
                     .execute(conn)
-                    .expect("Failed to add side dish to occurrence");
+                    .map_err(|e| {
+                        GqlApiError::internal(
+                            "Error while inserting side dishes for new occurrence",
+                            e.to_string(),
+                        )
+                    })?;
             }
         }
 
@@ -255,7 +322,12 @@ impl OccurrenceMutations {
                         tag,
                     })
                     .execute(conn)
-                    .expect("Failed to add tag to occurrence");
+                    .map_err(|e| {
+                        GqlApiError::internal(
+                            "Error while inserting tags for new occurrence",
+                            e.to_string(),
+                        )
+                    })?;
             }
         }
 
@@ -271,8 +343,7 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Save occurrence id for later and convert the input to a changeset
         let occ_id = input.id;
@@ -284,17 +355,35 @@ impl OccurrenceMutations {
             .set(changeset)
             .get_result::<DbOccurrence>(conn)
             .optional_empty_changeset()
-            .expect("Error while updating occurrence");
+            .map_err(|e| match e {
+                NotFound => {
+                    GqlApiError::not_found(format!("Occurrence with ID '{}' not found", input.id))
+                }
+                _ => GqlApiError::internal(
+                    format!("Error while updating occurrence with ID '{}'", input.id),
+                    e.to_string(),
+                ),
+            })?;
 
         // Use non-empty changeset if present and fall back to querying otherwise
-        let result = pot_empty_changeset.unwrap_or_else(|| {
+        let result = match pot_empty_changeset {
+            Some(occurrence) => occurrence,
             // Fallback query that returns the occurrence as it is stored in the database
-            occurrences::table
+            None => occurrences::table
                 .filter(occurrences::id.eq(occ_id))
                 .select(DbOccurrence::as_select())
                 .first(conn)
-                .expect("Unable to get updated occurrence")
-        });
+                .map_err(|e| match e {
+                    NotFound => GqlApiError::not_found(format!(
+                        "Occurrence with ID '{}' not found",
+                        input.id
+                    )),
+                    _ => GqlApiError::internal(
+                        format!("Error while updating occurrence with ID '{}'", input.id),
+                        e.to_string(),
+                    ),
+                })?,
+        };
 
         Ok(result.into())
     }
@@ -310,13 +399,18 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         let amount = diesel::delete(occurrences::table)
             .filter(occurrences::id.eq(input.id))
             .execute(conn)
-            .expect("Failed to delete occurrence");
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!("Error while deleting occurrence with ID '{}'", input.id),
+                    e.to_string(),
+                )
+            })?;
+
         Ok(amount == 1)
     }
 
@@ -329,14 +423,21 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Add side dish
         diesel::insert_into(occurrences_side_dishes::table)
             .values(&input)
             .execute(conn)
-            .expect("Failed to add side dish to occurrence");
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Error while adding side dish with ID '{}' to occurrence with ID '{}'",
+                        input.dish, input.occurrence
+                    ),
+                    e.to_string(),
+                )
+            })?;
 
         Ok(OccurrenceSideDish {
             occurrence_id: input.occurrence,
@@ -353,15 +454,20 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Identify...
         let rows_to_delete = occurrences_side_dishes::table.find((input.occurrence, input.dish));
         // ... and delete rows
-        diesel::delete(rows_to_delete)
-            .execute(conn)
-            .expect("Failed to remove side dish from occurrence");
+        diesel::delete(rows_to_delete).execute(conn).map_err(|e| {
+            GqlApiError::internal(
+                format!(
+                    "Error while removing side dish with ID '{}' from occurrence with ID '{}'",
+                    input.dish, input.occurrence
+                ),
+                e.to_string(),
+            )
+        })?;
 
         Ok(OccurrenceSideDish {
             occurrence_id: input.occurrence,
@@ -378,14 +484,21 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Add tag for occurrence
         diesel::insert_into(occurrences_tags::table)
             .values(&input)
             .execute(conn)
-            .expect("Failed to add tag to occurrence");
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Error while adding tag '{}' to occurrence with ID '{}'",
+                        input.tag, input.occurrence
+                    ),
+                    e.to_string(),
+                )
+            })?;
 
         Ok(OccurrenceTag {
             occurrence_id: input.occurrence,
@@ -402,15 +515,20 @@ impl OccurrenceMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Identify...
         let rows_to_delete = occurrences_tags::table.find((input.occurrence, &input.tag));
         // ... and delete rows
-        diesel::delete(rows_to_delete)
-            .execute(conn)
-            .expect("Failed to remove tag from occurrence");
+        diesel::delete(rows_to_delete).execute(conn).map_err(|e| {
+            GqlApiError::internal(
+                format!(
+                    "Error while removing tag '{}' from occurrence with ID '{}'",
+                    input.tag, input.occurrence
+                ),
+                e.to_string(),
+            )
+        })?;
 
         Ok(OccurrenceTag {
             occurrence_id: input.occurrence,
