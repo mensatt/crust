@@ -1,12 +1,12 @@
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
+use diesel::result::Error::NotFound;
 
 use crate::auth::AuthContext;
-use crate::db::{
-    conn::DbPool,
-    models::tag::{DbTag, TagPriority},
-};
+use crate::db::models::tag::{DbTag, TagPriority};
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlTag;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::tags;
 
 #[derive(Debug, InputObject, Insertable)]
@@ -43,14 +43,15 @@ impl TagMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Add tag and return it
         let results: DbTag = diesel::insert_into(tags::table)
             .values(&input)
             .get_result(conn)
-            .expect("Error saving new tag");
+            // NOTE: In theory .get_result() could return NotFound, but if that happens on insert
+            //       something internally has gone wrong.
+            .map_err(|e| GqlApiError::internal("Error while inserting new tag", e.to_string()))?;
 
         Ok(results.into())
     }
@@ -60,8 +61,7 @@ impl TagMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Try to update, map empty changeset to None (instead of Error)
         let pot_empty_changeset = diesel::update(tags::table)
@@ -69,17 +69,30 @@ impl TagMutations {
             .set(&input)
             .get_result::<DbTag>(conn)
             .optional_empty_changeset()
-            .expect("Error while updating tag");
+            .map_err(|e| match e {
+                NotFound => GqlApiError::not_found(format!("Tag '{}' not found", input.key)),
+                _ => GqlApiError::internal(
+                    format!("Error while updating tag '{}'", input.key),
+                    e.to_string(),
+                ),
+            })?;
 
         // Use non-empty changeset if present and fall back to querying otherwise
-        let result = pot_empty_changeset.unwrap_or_else(|| {
-            // Fallback query that returns the tag as it is stored in the databse
-            tags::table
+        let result = match pot_empty_changeset {
+            Some(tag) => tag,
+            // Fallback query that returns the tag as it is stored in the database
+            None => tags::table
                 .filter(tags::key.eq(&input.key))
                 .select(DbTag::as_select())
                 .first(conn)
-                .expect("Unable to get updated tag")
-        });
+                .map_err(|e| match e {
+                    NotFound => GqlApiError::not_found(format!("Tag '{}' not found", input.key)),
+                    _ => GqlApiError::internal(
+                        format!("Error while updating tag '{}'", input.key),
+                        e.to_string(),
+                    ),
+                })?,
+        };
 
         Ok(result.into())
     }
