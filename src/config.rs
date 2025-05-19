@@ -61,6 +61,9 @@ pub struct AppConfig {
     pub database: DatabaseConfig,
     #[serde(default)]
     pub jwt: JwtConfig,
+    // HTTP path prefix if running behind a proxy
+    #[serde(default)]
+    pub proxy_prefix: String,
 }
 
 impl AppConfig {
@@ -73,8 +76,8 @@ impl AppConfig {
         let config = Config::builder()
             // Loads values from config_path (if present)
             .add_source(File::with_name(&config_path).required(false))
-            // Allow specificing config properites via variables named `MENSATT_<property>`
-            .add_source(Environment::with_prefix("MENSATT").separator("_"))
+            // Allow specifying config properties via variables named `MENSATT__<property>`
+            .add_source(Environment::with_prefix("MENSATT").separator("__"))
             .build()
             .context("Faled to build configuration")?;
         let deserialized: Self = config
