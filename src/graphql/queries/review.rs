@@ -1,10 +1,12 @@
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
+use log::debug;
 
 use crate::db::models::image::DbImage;
-use crate::db::{conn::DbPool, models::review::DbReview};
-use crate::graphql::util::GqlTimestamp;
+use crate::db::models::review::DbReview;
+use crate::graphql::error::GqlApiError;
+use crate::graphql::util::{get_conn_from_ctx, GqlTimestamp};
 use crate::schema::images;
 use crate::schema::reviews::dsl::*;
 use crate::OccurrenceLoader;
@@ -22,7 +24,7 @@ pub struct GqlReview {
     pub updated_at: GqlTimestamp,
     pub accepted_at: Option<GqlTimestamp>,
 
-    // Internal fields which are not exposted via the API
+    // Internal fields which are not exposed via the API
     #[graphql(skip)]
     pub occurrence_id: uuid::Uuid,
 }
@@ -30,25 +32,48 @@ pub struct GqlReview {
 #[async_graphql::ComplexObject]
 impl GqlReview {
     async fn occurrence(&self, ctx: &Context<'_>) -> Result<GqlOccurrence> {
-        // println!("Loading occurrence {}", self.occurrence_id);
-        let loader = ctx.data::<DataLoader<OccurrenceLoader>>()?;
+        debug!(
+            "Loading occurrence with ID '{}' for review with ID '{}'",
+            self.occurrence_id, self.id
+        );
+        let loader = ctx.data::<DataLoader<OccurrenceLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get OccurrenceLoader from context", e.message)
+        })?;
         let occ = loader
             .load_one(self.occurrence_id)
-            .await?
-            .ok_or("Occurrence not found")?;
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load occurrence with ID '{}' for review with ID '{}' via occurrence loader",
+                        self.occurrence_id, self.id
+                    ),
+                    e.message,
+                )
+            })?
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Occurrence with ID '{}' not found", self.occurrence_id))
+            })?;
         Ok(occ.into())
     }
 
     async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         let results = images::table
             .select(DbImage::as_select())
             .filter(images::review.eq(self.id))
             .load(conn)
-            .expect("Error loading images for review");
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Error while loading images for review with ID '{}'",
+                        self.id
+                    ),
+                    e.to_string(),
+                )
+            })?;
 
         Ok(results.into_iter().map(Into::into).collect())
     }
@@ -87,13 +112,12 @@ impl ReviewQueries {
         // NOTE: Using the ReviewLoader is not beneficial here since we don't exclusively filter on ids
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Construct basic query
         let mut query = reviews.select(DbReview::as_select()).into_boxed();
 
-        // Add neccessary clauses depending on present filter values
+        // Add necessary clauses depending on present filter values
         if let Some(f) = filter {
             if let Some(filter_approved) = f.approved {
                 if filter_approved {
@@ -105,7 +129,10 @@ impl ReviewQueries {
         }
 
         // Execute query
-        let results = query.load(conn).expect("Error loading reviews");
+        let results = query
+            .load(conn)
+            .map_err(|e| GqlApiError::internal("Error while loading reviews", e.to_string()))?;
+
         Ok(results.into_iter().map(Into::into).collect())
     }
 }

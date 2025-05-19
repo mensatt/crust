@@ -1,18 +1,18 @@
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result};
 use diesel::prelude::*;
+use diesel::result::Error::NotFound;
 
 use crate::auth::AuthContext;
 use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlReview;
+use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::reviews;
 use crate::{
-    db::{
-        conn::DbPool,
-        models::{
-            image::DbImage,
-            review::{DbReview, DbReviewChangeset},
-        },
+    db::models::{
+        image::DbImage,
+        review::{DbReview, DbReviewChangeset},
     },
     schema::images,
 };
@@ -108,8 +108,7 @@ impl ReviewMutations {
         // NOTE: No authentication on this mutation, as all users shall be able to create reviews
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         let now = chrono::Utc::now();
         let new_review = DbReview {
@@ -123,11 +122,17 @@ impl ReviewMutations {
             accepted_at: None,
         };
 
+        // TODO: Utilize transactions here to ensure atomic adding of review + images?
+
         // Add review and return it
         let result: DbReview = diesel::insert_into(reviews::table)
             .values(&new_review)
             .get_result(conn)
-            .expect("Error saving new review");
+            // NOTE: In theory .get_result() could return NotFound, but if that happens on insert
+            //       something internally has gone wrong.
+            .map_err(|e| {
+                GqlApiError::internal("Error while inserting new review", e.to_string())
+            })?;
 
         // If present, create images for review
         if let Some(images) = input.images {
@@ -140,7 +145,12 @@ impl ReviewMutations {
                         review: new_review.id,
                     })
                     .execute(conn)
-                    .expect("Error adding image for review");
+                    .map_err(|e| {
+                        GqlApiError::internal(
+                            "Error while inserting image for new review",
+                            e.to_string(),
+                        )
+                    })?;
             }
         }
 
@@ -156,8 +166,7 @@ impl ReviewMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Save review_id for later and convert the input to a changeset
         let review_id = input.id;
@@ -169,17 +178,34 @@ impl ReviewMutations {
             .set(changeset)
             .get_result::<DbReview>(conn)
             .optional_empty_changeset()
-            .expect("Error while updating review");
+            .map_err(|e| match e {
+                NotFound => {
+                    GqlApiError::not_found(format!("Review with ID '{}' not found", review_id))
+                }
+                _ => GqlApiError::internal(
+                    format!("Error while updating review with ID '{}'", review_id),
+                    e.to_string(),
+                ),
+            })?;
 
         // Use non-empty changeset if present and fall back to querying otherwise
-        let result = pot_empty_changeset.unwrap_or_else(|| {
+        let result = match pot_empty_changeset {
+            Some(review) => review,
             // Fallback query that returns the review as it is stored in the database
-            reviews::table
+            None => reviews::table
                 .filter(reviews::id.eq(review_id))
                 .select(DbReview::as_select())
                 .first(conn)
-                .expect("Unable to get updated review")
-        });
+                .map_err(|e| match e {
+                    NotFound => {
+                        GqlApiError::not_found(format!("Review with ID '{}' not found", review_id))
+                    }
+                    _ => GqlApiError::internal(
+                        format!("Error while updating review with ID '{}'", review_id),
+                        e.to_string(),
+                    ),
+                })?,
+        };
 
         Ok(result.into())
     }
@@ -195,13 +221,17 @@ impl ReviewMutations {
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         let amount = diesel::delete(reviews::table)
             .filter(reviews::id.eq(input.id))
             .execute(conn)
-            .expect("Failed to delete review");
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!("Error while deleting review with ID '{}'", input.id),
+                    e.to_string(),
+                )
+            })?;
         Ok(amount == 1)
     }
 
@@ -213,8 +243,7 @@ impl ReviewMutations {
         // NOTE: No auth on this mutation; all users shall be able to create reviews (with images)
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Create images for review
         // TODO: Handle image rotation (?)
@@ -226,16 +255,37 @@ impl ReviewMutations {
                     review: input.review,
                 })
                 .execute(conn)
-                .expect("Error adding image for review");
+                .map_err(|e| {
+                    GqlApiError::internal(
+                        format!(
+                            "Error while adding image with ID '{}' to review with ID '{}'",
+                            image.id, input.review
+                        ),
+                        e.to_string(),
+                    )
+                })?;
         }
 
         // Load and return review
-        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
+        let loader = ctx.data::<DataLoader<ReviewLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get ReviewLoader from context", e.message)
+        })?;
         let rev = loader
             .load_one(ReviewLoaderKey::ByReviewId { id: input.review })
-            .await?
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load review with ID '{}' via review loader",
+                        input.review
+                    ),
+                    e.message,
+                )
+            })?
             .and_then(|v| v.into_iter().next())
-            .expect("Review not found");
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Review with ID '{}' not found", input.review))
+            })?;
         Ok(rev.into())
     }
 
@@ -248,8 +298,7 @@ impl ReviewMutations {
         // TODO: Reconsider if this is sane
 
         // Get DB connection
-        let pool = ctx.data::<DbPool>()?;
-        let conn = &mut pool.get().unwrap();
+        let conn = &mut get_conn_from_ctx(ctx)?;
 
         // Delete images for review
         diesel::delete(
@@ -260,15 +309,36 @@ impl ReviewMutations {
             ),
         )
         .execute(conn)
-        .expect("Unable to remove images from review");
+        .map_err(|e| {
+            GqlApiError::internal(
+                format!(
+                    "Error while removing image(s) from review with ID '{}'",
+                    input.review
+                ),
+                e.to_string(),
+            )
+        })?;
 
         // Load and return review
-        let loader = ctx.data::<DataLoader<ReviewLoader>>()?;
+        let loader = ctx.data::<DataLoader<ReviewLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get ReviewLoader from context", e.message)
+        })?;
         let rev = loader
             .load_one(ReviewLoaderKey::ByReviewId { id: input.review })
-            .await?
+            .await
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Unable to load review with ID '{}' via review loader",
+                        input.review
+                    ),
+                    e.message,
+                )
+            })?
             .and_then(|v| v.into_iter().next())
-            .expect("Review not found");
+            .ok_or_else(|| {
+                GqlApiError::not_found(format!("Review with ID '{}' not found", input.review))
+            })?;
         Ok(rev.into())
     }
 }
