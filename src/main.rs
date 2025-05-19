@@ -26,7 +26,7 @@ use crate::db::conn::create_db_pool;
 use crate::graphql::dataloaders::*;
 use crate::graphql::schema::*;
 
-// Embedd migrations into executable
+// Embed migrations into executable
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 // State for Axum Router
@@ -34,6 +34,7 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 pub struct AppState {
     pub schema: GqlSchema,
     pub jwt_keypair: Arc<JwtKeyPair>,
+    pub proxy_prefix: String,
 }
 
 #[tokio::main]
@@ -99,6 +100,9 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn,
     );
 
+    // Extract proxy prefix for Axum state
+    let proxy_prefix = config.proxy_prefix.to_owned();
+
     // Create GraphQL schema with dataloaders, DB pool, JWT keypair and config in its context
     let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
         .data(dish_loader)
@@ -119,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(AppState {
             schema,
             jwt_keypair,
+            proxy_prefix: proxy_prefix.clone(),
         })
         .layer(
             CorsLayer::new()
@@ -135,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
             "Failed to create TcpListener for '{ADDR_AND_PORT}'"
         ))?;
 
-    info!("Starting axum server on '{ADDR_AND_PORT}'");
+    info!("Starting axum server on '{ADDR_AND_PORT}' with proxy prefix: '{proxy_prefix}'");
     axum::serve(listener, router.into_make_service())
         .await
         .context("Failed to start axum server")?;
@@ -167,10 +172,11 @@ async fn graphql_handler(
         .into()
 }
 
-async fn graphiql() -> impl IntoResponse {
+async fn graphiql(State(state): State<AppState>) -> impl IntoResponse {
+    let endpoint = format!("{}/playground", state.proxy_prefix);
     Html(
         GraphiQLSource::build()
-            .endpoint("/playground")
+            .endpoint(&endpoint)
             .finish()
             // Replace lines were added because of
             //   https://github.com/async-graphql/async-graphql/issues/1703
