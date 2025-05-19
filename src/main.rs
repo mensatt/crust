@@ -18,7 +18,7 @@ use axum::{
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use log::{debug, info};
-use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 
 use crate::auth::{init_jwt_keypair, verify_jwt, AuthContext, JwtKeyPair};
 use crate::config::AppConfig;
@@ -122,7 +122,8 @@ async fn main() -> anyhow::Result<()> {
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::predicate(|_, _| true))
-                .allow_methods([Method::GET, Method::POST]),
+                .allow_methods([Method::GET, Method::POST])
+                .allow_headers(AllowHeaders::any()),
         );
 
     // TODO: Make configurable
