@@ -13,7 +13,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, Method},
     response::{Html, IntoResponse},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
@@ -114,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
 
     let router = Router::new()
         .route("/", get(hello_world))
+        .route("/graphql", post(graphql_handler))
         .route("/playground", get(graphiql).post(graphql_handler))
         .with_state(AppState {
             schema,
