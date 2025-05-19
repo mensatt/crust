@@ -2,9 +2,12 @@ use std::collections::HashMap;
 
 use async_graphql::dataloader::Loader;
 use diesel::prelude::*;
+use log::debug;
 
 use crate::db::{conn::DbPool, models::review::DbReview};
+use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::ReviewFilter;
+use crate::graphql::util::get_conn_from_pool;
 use crate::schema::{occurrences, reviews};
 
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -61,7 +64,10 @@ impl ReviewLoader {
         // Fetch all those ids from the DB
         let reviews = reviews::table
             .filter(reviews::id.eq_any(&ids))
-            .load::<DbReview>(conn)?;
+            .load::<DbReview>(conn)
+            .map_err(|e| {
+                GqlApiError::internal("Error while loading reviews by ID", e.to_string())
+            })?;
 
         // Group reviews by review_id
         let review_map: HashMap<uuid::Uuid, DbReview> =
@@ -93,7 +99,13 @@ impl ReviewLoader {
         // Fetch reviews with those occurrence ids from DB
         let reviews = reviews::table
             .filter(reviews::occurrence.eq_any(&occ_ids))
-            .load::<DbReview>(conn)?;
+            .load::<DbReview>(conn)
+            .map_err(|e| {
+                GqlApiError::internal(
+                    "Error while loading reviews by occurrence ID",
+                    e.to_string(),
+                )
+            })?;
 
         // Group reviews by occurrence_id
         let mut occ_map: HashMap<uuid::Uuid, Vec<DbReview>> = HashMap::new();
@@ -137,7 +149,10 @@ impl ReviewLoader {
             .inner_join(occurrences::table)
             .filter(occurrences::dish.eq_any(&dish_ids))
             .select((DbReview::as_select(), occurrences::dish))
-            .load::<(DbReview, uuid::Uuid)>(conn)?;
+            .load::<(DbReview, uuid::Uuid)>(conn)
+            .map_err(|e| {
+                GqlApiError::internal("Error while loading reviews by dish ID", e.to_string())
+            })?;
 
         // Group reviews by dish ID
         let mut dish_map: HashMap<uuid::Uuid, Vec<DbReview>> = HashMap::new();
@@ -172,7 +187,7 @@ impl Loader<ReviewLoaderKey> for ReviewLoader {
         keys: &[ReviewLoaderKey],
     ) -> Result<HashMap<ReviewLoaderKey, Self::Value>, Self::Error> {
         // Get DB connection
-        let conn = &mut self.pool.get().unwrap();
+        let conn = &mut get_conn_from_pool(&self.pool)?;
 
         let mut result_map = HashMap::new();
 
@@ -194,9 +209,15 @@ impl Loader<ReviewLoaderKey> for ReviewLoader {
             }
         }
 
-        println!("Loading {} elements ({} rev, {} occ, {} dsh)", keys.len(), by_review_id.len(), by_occurrence_id.len(), by_dish_id.len());
+        debug!(
+            "Loading {} elements ({} rev, {} occ, {} dsh)",
+            keys.len(),
+            by_review_id.len(),
+            by_occurrence_id.len(),
+            by_dish_id.len()
+        );
 
-        // Note: We execute three separate queries here even though one review might be present in
+        // NOTE: We execute three separate queries here even though one review might be present in
         // multiple of them (which is inefficient).
         // It was decided to do it this way because constructing a single large query is
         //  a) overly complex (especially when filters come into play)
