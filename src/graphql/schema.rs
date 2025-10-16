@@ -1,6 +1,6 @@
-use async_graphql::{EmptySubscription, Schema};
+use async_graphql::Schema;
 
-use crate::graphql::{mutations::*, queries::*};
+use crate::graphql::{mutations::*, queries::*, subscriptions::*};
 
 #[derive(async_graphql::MergedObject, Default)]
 pub struct Query(
@@ -24,5 +24,8 @@ pub struct Mutation(
     UserMutations,
 );
 
+#[derive(async_graphql::MergedSubscription, Default)]
+pub struct Subscription(ReviewSubscriptions);
+
 // Small helper type to avoid code duplication
-pub type GqlSchema = Schema<Query, Mutation, EmptySubscription>;
+pub type GqlSchema = Schema<Query, Mutation, Subscription>;
