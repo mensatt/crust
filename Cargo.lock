@@ -542,12 +542,14 @@ dependencies = [
  "diesel-derive-enum",
  "diesel_migrations",
  "env_logger",
+ "futures-util",
  "jsonwebtoken",
  "log",
  "openssl-sys",
  "pq-sys",
  "serde",
  "tokio",
+ "tokio-stream",
  "tower-http",
  "uuid",
 ]
@@ -2039,6 +2041,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

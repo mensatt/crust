@@ -23,7 +23,7 @@ impl From<GqlDate> for chrono::DateTime<chrono::Utc> {
 // Format: Microsecond precision; with "Z" for UTC timezone
 // Example: 2024-02-02T08:04:08.924549Z
 // Note: This format was chosen to be backwards-compatible with the previous API implementation
-#[derive(async_graphql::NewType, Debug)]
+#[derive(async_graphql::NewType, Debug, Clone)]
 #[graphql(name = "Timestamp")]
 pub struct GqlTimestamp(String);
 

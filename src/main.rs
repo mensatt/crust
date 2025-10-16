@@ -7,10 +7,10 @@ pub mod schema;
 use std::sync::Arc;
 
 use anyhow::Context;
-use async_graphql::{dataloader::DataLoader, http::GraphiQLSource, EmptySubscription, Schema};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql::{dataloader::DataLoader, http::GraphiQLSource, Schema};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLWebSocket, GraphQLProtocol};
 use axum::{
-    extract::State,
+    extract::{State, WebSocketUpgrade},
     http::{HeaderMap, Method},
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -25,6 +25,7 @@ use crate::config::AppConfig;
 use crate::db::conn::create_db_pool;
 use crate::graphql::dataloaders::*;
 use crate::graphql::schema::*;
+use crate::graphql::subscriptions::SubscriptionBroker;
 
 // Embed migrations into executable
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
@@ -103,8 +104,11 @@ async fn main() -> anyhow::Result<()> {
     // Extract proxy prefix for Axum state
     let proxy_prefix = config.proxy_prefix.to_owned();
 
-    // Create GraphQL schema with dataloaders, DB pool, JWT keypair and config in its context
-    let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), EmptySubscription)
+    // Create subscription broker
+    let subscription_broker = SubscriptionBroker::new();
+
+    // Create GraphQL schema with dataloaders, DB pool, JWT keypair, config and subscription broker in its context
+    let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), Subscription::default())
         .data(dish_loader)
         .data(location_loader)
         .data(occurrence_loader)
@@ -113,12 +117,14 @@ async fn main() -> anyhow::Result<()> {
         .data(tag_loader)
         .data(db_pool.clone())
         .data(jwt_keypair.clone())
+        .data(subscription_broker.clone())
         .data(config)
         .finish();
 
     let router = Router::new()
         .route("/", get(hello_world))
         .route("/graphql", post(graphql_handler))
+        .route("/graphql/ws", get(graphql_subscription_handler))
         .route("/playground", get(graphiql).post(graphql_handler))
         .with_state(AppState {
             schema,
@@ -172,11 +178,24 @@ async fn graphql_handler(
         .into()
 }
 
+async fn graphql_subscription_handler(
+    State(state): State<AppState>,
+    protocol: GraphQLProtocol,
+    websocket: WebSocketUpgrade,
+) -> impl IntoResponse {
+    websocket.on_upgrade(move |stream| {
+        GraphQLWebSocket::new(stream, state.schema, protocol)
+            .serve()
+    })
+}
+
 async fn graphiql(State(state): State<AppState>) -> impl IntoResponse {
     let endpoint = format!("{}/playground", state.proxy_prefix);
+    let subscription_endpoint = format!("{}/graphql/ws", state.proxy_prefix);
     Html(
         GraphiQLSource::build()
             .endpoint(&endpoint)
+            .subscription_endpoint(&subscription_endpoint)
             .finish()
             // Replace lines were added because of
             //   https://github.com/async-graphql/async-graphql/issues/1703

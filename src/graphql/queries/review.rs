@@ -13,7 +13,7 @@ use crate::OccurrenceLoader;
 
 use super::{GqlImage, GqlOccurrence};
 
-#[derive(Debug, SimpleObject)]
+#[derive(Debug, Clone, SimpleObject)]
 #[graphql(complex, name = "Review")]
 pub struct GqlReview {
     pub id: uuid::Uuid,

@@ -7,6 +7,7 @@ use crate::auth::AuthContext;
 use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
 use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlReview;
+use crate::graphql::subscriptions::broker::{ReviewEvent, SubscriptionBroker};
 use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::reviews;
 use crate::{
@@ -154,7 +155,14 @@ impl ReviewMutations {
             }
         }
 
-        Ok(result.into())
+        let gql_review: GqlReview = result.into();
+
+        // Publish review created event to subscribers
+        if let Ok(broker) = ctx.data::<SubscriptionBroker>() {
+            broker.publish_review(ReviewEvent::Created(gql_review.clone()));
+        }
+
+        Ok(gql_review)
     }
 
     async fn update_review(
@@ -170,6 +178,7 @@ impl ReviewMutations {
 
         // Save review_id for later and convert the input to a changeset
         let review_id = input.id;
+        let was_approved = input.approved == Some(true);
         let changeset: DbReviewChangeset = input.into();
 
         // Try to update, map empty changeset to None (instead of Error)
@@ -207,7 +216,16 @@ impl ReviewMutations {
                 })?,
         };
 
-        Ok(result.into())
+        let gql_review: GqlReview = result.into();
+
+        // Publish review accepted event to subscribers if the review was approved
+        if was_approved {
+            if let Ok(broker) = ctx.data::<SubscriptionBroker>() {
+                broker.publish_review(ReviewEvent::Accepted(gql_review.clone()));
+            }
+        }
+
+        Ok(gql_review)
     }
 
     async fn delete_review(
