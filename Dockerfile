@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Builder
-FROM rust:1.86.0-alpine3.21 AS builder
+FROM rust:1.90.0-alpine3.21 AS builder
 
 RUN apk upgrade --no-cache && apk add --no-cache build-base perl
 WORKDIR /usr/src/crust
