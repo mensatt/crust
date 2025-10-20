@@ -1,28 +1,22 @@
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-use crate::graphql::queries::GqlReview;
-
-/// Events that can be broadcast to subscribers
-#[derive(Clone, Debug)]
-pub enum ReviewEvent {
-    Created(GqlReview),
-    Accepted(GqlReview),
-}
+use crate::graphql::subscriptions::review::ReviewEvent;
 
 /// Broker for managing subscription events
 /// Uses Tokio's broadcast channel for efficient fan-out messaging
 #[derive(Clone)]
 pub struct SubscriptionBroker {
-    // Broadcast channel for review events
-    // We use a capacity of 1024 which should be sufficient for most cases
-    // Older messages will be dropped if the channel fills up
+    /// Broadcast channel for review events
     review_tx: Arc<broadcast::Sender<ReviewEvent>>,
 }
 
 impl SubscriptionBroker {
     /// Create a new subscription broker
     pub fn new() -> Self {
+        // Capacity of 1024 should be sufficient for most cases
+        // Each receiver has its own buffer - if a slow receiver falls behind by more than
+        // 1024 messages, it will receive a RecvError::Lagged and the oldest messages are dropped
         let (tx, _) = broadcast::channel(1024);
         Self {
             review_tx: Arc::new(tx),
