@@ -5,7 +5,14 @@ use tokio_stream::StreamExt;
 
 use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlReview;
-use crate::graphql::subscriptions::broker::{ReviewEvent, SubscriptionBroker};
+use crate::graphql::subscriptions::broker::SubscriptionBroker;
+
+/// Events that can be broadcast to subscribers
+#[derive(Clone, Debug)]
+pub enum ReviewEvent {
+    Created(GqlReview),
+    Accepted(GqlReview),
+}
 
 #[derive(Default)]
 pub struct ReviewSubscriptions;

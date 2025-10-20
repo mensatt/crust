@@ -7,7 +7,7 @@ use crate::auth::AuthContext;
 use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
 use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlReview;
-use crate::graphql::subscriptions::broker::{ReviewEvent, SubscriptionBroker};
+use crate::graphql::subscriptions::{ReviewEvent, SubscriptionBroker};
 use crate::graphql::util::get_conn_from_ctx;
 use crate::schema::reviews;
 use crate::{
