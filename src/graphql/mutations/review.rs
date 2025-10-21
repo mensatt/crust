@@ -65,7 +65,11 @@ impl From<UpdateReviewInput> for DbReviewChangeset {
         // Only set the update timestamp if any "real" value is going to be changed
         let updated_at = has_updates.then_some(now);
         // Set approved timestamp if approved was passed in the mutation
-        let accepted_at = (value.approved == Some(true)).then_some(now);
+        let accepted_at = match value.approved {
+            None => None,
+            Some(true) => Some(Some(now)),
+            Some(false) => Some(None),
+        };
         DbReviewChangeset {
             display_name: value.display_name,
             stars: value.stars,
@@ -178,8 +182,31 @@ impl ReviewMutations {
 
         // Save review_id for later and convert the input to a changeset
         let review_id = input.id;
-        let was_approved = input.approved == Some(true);
-        let changeset: DbReviewChangeset = input.into();
+        let mut changeset: DbReviewChangeset = input.into();
+
+        // If input.approved is set and true, query review to see if it is already approved
+        // if so, don't change accepted_at (aka set it to None in the changeset)
+        if changeset.accepted_at.flatten().is_some() {
+            let pre_update_review = reviews::table
+                .filter(reviews::id.eq(review_id))
+                .select(DbReview::as_select())
+                .first(conn)
+                .map_err(|e| match e {
+                    NotFound => {
+                        GqlApiError::not_found(format!("Review with ID '{}' not found", review_id))
+                    }
+                    _ => GqlApiError::internal(
+                        format!("Error while updating review with ID '{}'", review_id),
+                        e.to_string(),
+                    ),
+                })?;
+
+            if pre_update_review.accepted_at.is_some() {
+                changeset.accepted_at = None
+            }
+        }
+        // Check if review will be accepted for the first time
+        let first_approval = changeset.accepted_at.flatten().is_some();
 
         // Try to update, map empty changeset to None (instead of Error)
         let pot_empty_changeset: Option<DbReview> = diesel::update(reviews::table)
@@ -219,7 +246,7 @@ impl ReviewMutations {
         let gql_review: GqlReview = result.into();
 
         // Publish review accepted event to subscribers if the review was approved
-        if was_approved {
+        if first_approval {
             if let Ok(broker) = ctx.data::<SubscriptionBroker>() {
                 broker.publish_review(ReviewEvent::Accepted(gql_review.clone()));
             }

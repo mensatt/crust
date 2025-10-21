@@ -25,6 +25,6 @@ pub struct DbReviewChangeset {
     pub text: Option<String>,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub accepted_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub accepted_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     pub occurrence: Option<uuid::Uuid>,
 }
