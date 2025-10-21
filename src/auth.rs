@@ -15,7 +15,7 @@ use crate::config::JwtConfig;
 //       both signing and verifying.
 pub const JWT_ALGO: Algorithm = Algorithm::RS256;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // Subject (we use email)
     pub iat: i64,    // Issued at timestamp (in s since epoch)
