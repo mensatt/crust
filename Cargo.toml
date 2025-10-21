@@ -15,7 +15,7 @@ argon2 = "0.5.3"
 async-graphql = { version = "7.0.17", features = ["uuid", "chrono", "dataloader"] }
 async-graphql-axum = "7.0.17"
 # For HTTP Stuff
-axum = "0.8.1"
+axum = "0.8.6"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tower-http = { version = "0.5.2", features = ["cors"] }
