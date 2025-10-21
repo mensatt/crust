@@ -18,8 +18,8 @@ services:
     ports:
       - 8000:8000
     environment:
-      MENSATT_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?}
-      MENSATT_DATABASE_HOST: postgres
+      MENSATT__DATABASE__PASSWORD: ${POSTGRES_PASSWORD:?}
+      MENSATT__DATABASE__HOST: postgres
     volumes:
       - ./private_key.pem:/private_key.pem
       - ./public_key.pem:/public_key.pem
