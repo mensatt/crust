@@ -18,7 +18,7 @@ async-graphql-axum = "7.0.14"
 axum = "0.8.1"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tower-http = { version = "0.5.2", features = ["cors"] }
+tower-http = { version = "0.6.6", features = ["cors"] }
 futures-util = "0.3"
 # For SQL Stuff
 diesel = { version = "2.2.6", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
