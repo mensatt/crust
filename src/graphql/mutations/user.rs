@@ -2,13 +2,17 @@ use std::sync::Arc;
 
 use argon2::{
     password_hash::{
-        errors::Error as PasswordHashError, rand_core::OsRng, PasswordHasher, SaltString,
+        errors::Error as PasswordHashError, PasswordHasher, SaltString,
     },
     Argon2, PasswordHash, PasswordVerifier,
 };
 use async_graphql::{Context, InputObject, Result};
 use diesel::{prelude::*, result::Error as DieselError};
 use log::info;
+// See if this import from rand_core can be removed once
+//   https://github.com/RustCrypto/password-hashes/issues/730
+// is closed
+use rand_core::OsRng;
 
 use crate::db::models::user::DbUser;
 use crate::graphql::error::GqlApiError;
