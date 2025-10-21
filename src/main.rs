@@ -196,15 +196,7 @@ async fn graphiql(State(state): State<AppState>) -> impl IntoResponse {
         GraphiQLSource::build()
             .endpoint(&endpoint)
             .subscription_endpoint(&subscription_endpoint)
-            .finish()
-            // Replace lines were added because of
-            //   https://github.com/async-graphql/async-graphql/issues/1703
-            // they can be removed once the issue is resolved.
-            .replace("@17", "@18")
-            .replace(
-                "ReactDOM.render(",
-                "ReactDOM.createRoot(document.getElementById(\"graphiql\")).render(",
-            ),
+            .finish(),
     )
 }
 
