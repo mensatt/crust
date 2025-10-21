@@ -12,8 +12,8 @@ serde = { version = "1.0.219", features = ["derive"] } # For (de)serializing dat
 jsonwebtoken = "9.3.1"
 argon2 = "0.5.3"
 # For GraphQL stuff
-async-graphql = { version = "7.0.14", features = ["uuid", "chrono", "dataloader"] }
-async-graphql-axum = "7.0.14"
+async-graphql = { version = "7.0.17", features = ["uuid", "chrono", "dataloader"] }
+async-graphql-axum = "7.0.17"
 # For HTTP Stuff
 axum = "0.8.1"
 tokio = { version = "1", features = ["full"] }
