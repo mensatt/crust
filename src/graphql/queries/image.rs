@@ -16,7 +16,7 @@ use super::GqlReview;
 pub struct GqlImage {
     pub id: uuid::Uuid,
 
-    // Internal fields which are not exposted via the API
+    // Internal fields which are not exposed via the API
     #[graphql(skip)]
     pub review_id: uuid::Uuid,
 }

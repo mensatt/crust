@@ -3,6 +3,7 @@ pub mod config;
 pub mod db;
 pub mod graphql;
 pub mod schema;
+pub mod image_service;
 
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ use crate::db::conn::create_db_pool;
 use crate::graphql::dataloaders::*;
 use crate::graphql::schema::*;
 use crate::graphql::subscriptions::SubscriptionBroker;
+use crate::image_service::ImageServiceClient;
 
 // Embed migrations into executable
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
@@ -107,6 +109,8 @@ async fn main() -> anyhow::Result<()> {
     // Create subscription broker
     let subscription_broker = SubscriptionBroker::new();
 
+    let image_service_client = ImageServiceClient::new(config.image_service.clone());
+
     // Create GraphQL schema with dataloaders, DB pool, JWT keypair, config and subscription broker in its context
     let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), Subscription::default())
         .data(dish_loader)
@@ -118,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
         .data(db_pool.clone())
         .data(jwt_keypair.clone())
         .data(subscription_broker.clone())
+        .data(image_service_client)
         .data(config)
         .finish();
 

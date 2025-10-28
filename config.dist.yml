@@ -17,3 +17,8 @@ jwt:
 
 # Path to prepend in URL if running behind an proxy
 proxy_prefix: ""
+
+# Image service location and API key
+image_service:
+  url: "http://localhost:3000"
+  api_key: ""

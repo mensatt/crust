@@ -55,12 +55,30 @@ impl Default for JwtConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct ImageServiceConfig {
+    pub url: String,
+    pub api_key: String,
+}
+
+impl Default for ImageServiceConfig {
+    fn default() -> Self {
+        Self {
+            url: "http://localhost:3000".to_string(),
+            api_key: "".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub database: DatabaseConfig,
     #[serde(default)]
     pub jwt: JwtConfig,
+    #[serde(default)]
+    pub image_service: ImageServiceConfig,
     // HTTP path prefix if running behind a proxy
     #[serde(default)]
     pub proxy_prefix: String,
