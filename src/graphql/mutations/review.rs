@@ -1,7 +1,7 @@
 use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, InputObject, Result};
-use diesel::prelude::*;
 use diesel::result::Error::NotFound;
+use diesel::{prelude::*, sql_query};
 
 use crate::auth::AuthContext;
 use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
@@ -9,6 +9,7 @@ use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::GqlReview;
 use crate::graphql::subscriptions::{ReviewEvent, SubscriptionBroker};
 use crate::graphql::util::get_conn_from_ctx;
+use crate::image_service::ImageServiceClient;
 use crate::schema::reviews;
 use crate::{
     db::models::{
@@ -100,6 +101,14 @@ pub struct RemoveImagesFromReviewInput {
     pub images: Vec<uuid::Uuid>,
 }
 
+// Small helper enum to indicate change in approval state for review updates
+#[derive(PartialEq)]
+enum ReviewApprovalAction {
+    Approve,
+    Unapprove,
+    Unchanged,
+}
+
 #[derive(Default)]
 pub struct ReviewMutations;
 
@@ -184,9 +193,10 @@ impl ReviewMutations {
         let review_id = input.id;
         let mut changeset: DbReviewChangeset = input.into();
 
-        // If input.approved is set and true, query review to see if it is already approved
-        // if so, don't change accepted_at (aka set it to None in the changeset)
-        if changeset.accepted_at.flatten().is_some() {
+        // If approval timestamp is set about to be modified, query review to see if status already
+        // matches expected value.
+        // If so, do not change accepted_at (aka set it to None in the changeset)
+        if let Some(expected_accepted_at) = changeset.accepted_at {
             let pre_update_review = reviews::table
                 .filter(reviews::id.eq(review_id))
                 .select(DbReview::as_select())
@@ -201,12 +211,19 @@ impl ReviewMutations {
                     ),
                 })?;
 
-            if pre_update_review.accepted_at.is_some() {
-                changeset.accepted_at = None
+            if expected_accepted_at.is_some() == pre_update_review.accepted_at.is_some() {
+                changeset.accepted_at = None;
             }
         }
-        // Check if review will be accepted for the first time
-        let first_approval = changeset.accepted_at.flatten().is_some();
+        let review_approval_action = match changeset.accepted_at {
+            Some(Some(_)) => ReviewApprovalAction::Approve,
+            Some(None) => ReviewApprovalAction::Unapprove,
+            None => ReviewApprovalAction::Unchanged,
+        };
+
+        sql_query("BEGIN").execute(conn).map_err(|e| {
+            GqlApiError::internal("Error while beginning SQL transaction", e.to_string())
+        })?;
 
         // Try to update, map empty changeset to None (instead of Error)
         let pot_empty_changeset: Option<DbReview> = diesel::update(reviews::table)
@@ -245,8 +262,94 @@ impl ReviewMutations {
 
         let gql_review: GqlReview = result.into();
 
-        // Publish review accepted event to subscribers if the review was approved
-        if first_approval {
+        // If we do not have to deal with (un)approvals, return review early
+        if review_approval_action == ReviewApprovalAction::Unchanged {
+            sql_query("COMMIT").execute(conn).map_err(|e| {
+                GqlApiError::internal("Error while committing SQL transaction", e.to_string())
+            })?;
+            return Ok(gql_review);
+        }
+
+        // Get image service client from context
+        let image_service = ctx.data::<ImageServiceClient>().map_err(|e| {
+            GqlApiError::internal("Unable to get ImageServiceClient from context", e.message)
+        })?;
+
+        // Query images of the review
+        let review_images = gql_review.images(ctx).await?;
+
+        // Indicates if a and what error occurred while (un)approving an image
+        let mut pot_error = None;
+
+        match review_approval_action {
+            ReviewApprovalAction::Approve => {
+                for image in &review_images {
+                    if let Err(e) = image_service.approve_image(image.id).await {
+                        pot_error = Some(e);
+                        break;
+                    }
+                }
+
+                // If any image failed to approve, unapprove all images again and roll back
+                // transaction before returning the error
+                if let Some(error) = pot_error {
+                    for image in review_images {
+                        let _ = image_service.unapprove_image(image.id).await;
+                    }
+
+                    // Roll back transaction
+                    sql_query("ROLLBACK").execute(conn).map_err(|e| {
+                        GqlApiError::internal(
+                            "Error while rolling back SQL transaction",
+                            e.to_string(),
+                        )
+                    })?;
+                    return Err(GqlApiError::internal(
+                        "At least one image approval failed; Rolled back transaction",
+                        error.to_string(),
+                    )
+                    .into());
+                }
+            }
+
+            ReviewApprovalAction::Unapprove => {
+                for image in &review_images {
+                    if let Err(e) = image_service.unapprove_image(image.id).await {
+                        pot_error = Some(e);
+                        break;
+                    }
+                }
+
+                // If any image failed to unapprove, approve all images again and roll back
+                // transaction before returning the error
+                if let Some(error) = pot_error {
+                    for image in review_images {
+                        let _ = image_service.approve_image(image.id).await;
+                    }
+
+                    // Roll back transaction
+                    sql_query("ROLLBACK").execute(conn).map_err(|e| {
+                        GqlApiError::internal(
+                            "Error while rolling back SQL transaction",
+                            e.to_string(),
+                        )
+                    })?;
+                    return Err(GqlApiError::internal(
+                        "At least one image unapproval failed; Rolled back transaction",
+                        error.to_string(),
+                    )
+                    .into());
+                }
+            }
+            _ => {}
+        }
+
+        sql_query("COMMIT").execute(conn).map_err(|e| {
+            GqlApiError::internal("Error while committing SQL transaction", e.to_string())
+        })?;
+
+        // Publish review accepted event if the review was approved successfully
+        if review_approval_action == ReviewApprovalAction::Approve {
             if let Ok(broker) = ctx.data::<SubscriptionBroker>() {
                 broker.publish_review(ReviewEvent::Accepted(gql_review.clone()));
             }

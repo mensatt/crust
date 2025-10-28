@@ -57,7 +57,7 @@ impl GqlReview {
         Ok(occ.into())
     }
 
-    async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
+    pub async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
         // Get DB connection
         let conn = &mut get_conn_from_ctx(ctx)?;
 

@@ -12,7 +12,7 @@ use async_graphql::Error;
 pub enum GqlApiError {
     // Some internal error that we do not want to provide further context via GQL
     Internal {
-        message: String,                      // Custom message to provide context
+        message: String,                      // Custom message to provide context in the log
         location: &'static Location<'static>, // The location the error occurred at
         underlying_error: String,             // The underlying error (message)
     },
