@@ -376,6 +376,32 @@ impl ReviewMutations {
         // Get DB connection
         let conn = &mut get_conn_from_ctx(ctx)?;
 
+        // Get image service client from context
+        let image_service = ctx.data::<ImageServiceClient>().map_err(|e| {
+            GqlApiError::internal("Unable to get ImageServiceClient from context", e.message)
+        })?;
+
+        // Query images of the review
+        let image_ids = images::table
+            .filter(images::review.eq(input.id))
+            .select(images::id)
+            .load(conn)
+            .map_err(|e| {
+                GqlApiError::internal(
+                    format!(
+                        "Error while querying images for review with ID '{}'",
+                        input.id
+                    ),
+                    e.to_string(),
+                )
+            })?;
+
+        // Delete images from image service
+        for image_id in image_ids {
+            // Continue on error; logging is done in delete_image
+            let _ = image_service.delete_image(image_id).await;
+        }
+
         let amount = diesel::delete(reviews::table)
             .filter(reviews::id.eq(input.id))
             .execute(conn)
@@ -385,6 +411,7 @@ impl ReviewMutations {
                     e.to_string(),
                 )
             })?;
+
         Ok(amount == 1)
     }
 
@@ -398,25 +425,37 @@ impl ReviewMutations {
         // Get DB connection
         let conn = &mut get_conn_from_ctx(ctx)?;
 
+        // Get image service client from context
+        let image_service = ctx.data::<ImageServiceClient>().map_err(|e| {
+            GqlApiError::internal("Unable to get ImageServiceClient from context", e.message)
+        })?;
+
         // Create images for review
-        // TODO: Handle image rotation (?)
-        // TODO: Notify image service about submitted image(s)
         for image in input.images {
-            diesel::insert_into(images::table)
-                .values(&DbImage {
-                    id: image.id,
-                    review: input.review,
-                })
-                .execute(conn)
-                .map_err(|e| {
-                    GqlApiError::internal(
-                        format!(
-                            "Error while adding image with ID '{}' to review with ID '{}'",
-                            image.id, input.review
-                        ),
-                        e.to_string(),
+            // Continue on error; logging already done in submit_image
+            if image_service.sumbit_image(image.id).await.is_ok() {
+                // Rotate image if rotation was given
+                if let Some(angle) = image.rotation {
+                    // Continue on error; Logging is already done in rotate_image
+                    let _ = image_service.rotate_image(image.id, angle).await;
+                }
+
+                // Insert image into DB; Log but continue on error
+                if let Err(e) = diesel::insert_into(images::table)
+                    .values(&DbImage {
+                        id: image.id,
+                        review: input.review,
+                    })
+                    .execute(conn)
+                {
+                    log::error!(
+                        "Unable to add image '{}' to review '{}' in DB: '{}'",
+                        image.id,
+                        input.review,
+                        e
                     )
-                })?;
+                }
+            }
         }
 
         // Load and return review
@@ -439,6 +478,7 @@ impl ReviewMutations {
             .ok_or_else(|| {
                 GqlApiError::not_found(format!("Review with ID '{}' not found", input.review))
             })?;
+
         Ok(rev.into())
     }
 
@@ -458,7 +498,7 @@ impl ReviewMutations {
             images::table.filter(
                 images::review
                     .eq(input.review)
-                    .and(images::id.eq_any(input.images)),
+                    .and(images::id.eq_any(&input.images)),
             ),
         )
         .execute(conn)
@@ -471,6 +511,17 @@ impl ReviewMutations {
                 e.to_string(),
             )
         })?;
+
+        // Get image service client from context
+        let image_service = ctx.data::<ImageServiceClient>().map_err(|e| {
+            GqlApiError::internal("Unable to get ImageServiceClient from context", e.message)
+        })?;
+
+        // Delete images from image service
+        for image_id in input.images {
+            // Continue on error; logging is done in delete_image
+            let _ = image_service.delete_image(image_id).await;
+        }
 
         // Load and return review
         let loader = ctx.data::<DataLoader<ReviewLoader>>().map_err(|e| {
