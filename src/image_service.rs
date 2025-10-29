@@ -144,4 +144,30 @@ impl ImageServiceClient {
             }
         }
     }
+
+    /// Delete an image by UUID
+    pub async fn delete_image(&self, id: Uuid) -> Result<(), ImageServiceApiError> {
+        log::debug!("Deleting image with id '{}'", id);
+        let url = format!("{}/image/{}", self.config.url, id);
+        let res = self
+            .client
+            .delete(&url)
+            .bearer_auth(&self.config.api_key)
+            .send()
+            .await?;
+
+        match res.status() {
+            StatusCode::OK => Ok(()),
+            status => {
+                let body = res.text().await.unwrap_or_default();
+                log::error!(
+                    "Failed to delete image with id '{}': Got '{}' with body '{}'",
+                    id,
+                    status,
+                    body
+                );
+                Err(ImageServiceApiError::UnexpectedStatus(status, body))
+            }
+        }
+    }
 }
