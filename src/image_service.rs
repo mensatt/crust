@@ -41,6 +41,58 @@ impl ImageServiceClient {
         }
     }
 
+    /// Submits an image by UUID
+    pub async fn sumbit_image(&self, id: Uuid) -> Result<(), ImageServiceApiError> {
+        log::debug!("Submitting image with id '{}'", id);
+        let url = format!("{}/submit/{}", self.config.url, id);
+        let res = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.config.api_key)
+            .send()
+            .await?;
+
+        match res.status() {
+            StatusCode::OK => Ok(()),
+            status => {
+                let body = res.text().await.unwrap_or_default();
+                log::error!(
+                    "Failed to submit image with id '{}': Got '{}' with body '{}'",
+                    id,
+                    status,
+                    body
+                );
+                Err(ImageServiceApiError::UnexpectedStatus(status, body))
+            }
+        }
+    }
+
+    /// Rotate an image in the image service
+    pub async fn rotate_image(&self, id: Uuid, angle: i64) -> Result<(), ImageServiceApiError> {
+        log::debug!("Submitting image with id '{}'", id);
+        let url = format!("{}/rotate?id={}&angle={}", self.config.url, id, angle);
+        let res = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.config.api_key)
+            .send()
+            .await?;
+
+        match res.status() {
+            StatusCode::OK => Ok(()),
+            status => {
+                let body = res.text().await.unwrap_or_default();
+                log::error!(
+                    "Failed to rotate image with id '{}': Got '{}' with body '{}'",
+                    id,
+                    status,
+                    body
+                );
+                Err(ImageServiceApiError::UnexpectedStatus(status, body))
+            }
+        }
+    }
+
     /// Approves an image by UUID
     pub async fn approve_image(&self, id: Uuid) -> Result<(), ImageServiceApiError> {
         log::debug!("Approving image with id '{}'", id);

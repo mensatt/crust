@@ -136,8 +136,6 @@ impl ReviewMutations {
             accepted_at: None,
         };
 
-        // TODO: Utilize transactions here to ensure atomic adding of review + images?
-
         // Add review and return it
         let result: DbReview = diesel::insert_into(reviews::table)
             .values(&new_review)
@@ -148,23 +146,38 @@ impl ReviewMutations {
                 GqlApiError::internal("Error while inserting new review", e.to_string())
             })?;
 
-        // If present, create images for review
+        // If present, submit images and associate them with the review
         if let Some(images) = input.images {
-            // TODO: Handle image rotation (?)
-            // TODO: Notify image service about submitted image
+            // Get image service client from context
+            let image_service = ctx.data::<ImageServiceClient>().map_err(|e| {
+                GqlApiError::internal("Unable to get ImageServiceClient from context", e.message)
+            })?;
+
             for image in images {
-                diesel::insert_into(images::table)
-                    .values(&DbImage {
-                        id: image.id,
-                        review: new_review.id,
-                    })
-                    .execute(conn)
-                    .map_err(|e| {
-                        GqlApiError::internal(
-                            "Error while inserting image for new review",
-                            e.to_string(),
+                // Continue on error; logging already done in submit_image
+                if image_service.sumbit_image(image.id).await.is_ok() {
+                    // Rotate image if rotation was given
+                    if let Some(angle) = image.rotation {
+                        // Continue on error; Logging is already done in rotate_image
+                        let _ = image_service.rotate_image(image.id, angle).await;
+                    }
+
+                    // Insert image into DB; Log but continue on error
+                    if let Err(e) = diesel::insert_into(images::table)
+                        .values(&DbImage {
+                            id: image.id,
+                            review: new_review.id,
+                        })
+                        .execute(conn)
+                    {
+                        log::error!(
+                            "Unable to add image '{}' to review '{}' in DB: '{}'",
+                            image.id,
+                            new_review.id,
+                            e
                         )
-                    })?;
+                    }
+                }
             }
         }
 
@@ -318,7 +331,10 @@ impl ReviewMutations {
                 _ => unreachable!(),
             }
 
-            log::debug!("Resetting review approval state to '{:?}'", prev_accepted_at);
+            log::debug!(
+                "Resetting review approval state to '{:?}'",
+                prev_accepted_at
+            );
             diesel::update(reviews::table)
                 .filter(reviews::id.eq(review_id))
                 .set(reviews::accepted_at.eq(prev_accepted_at))
