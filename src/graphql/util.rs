@@ -42,7 +42,7 @@ pub fn get_conn_from_ctx(ctx: &async_graphql::Context) -> async_graphql::Result<
         .data::<DbPool>()
         .map_err(|e| GqlApiError::internal("Unable to get pool from context.", e.message))?;
 
-    Ok(get_conn_from_pool(pool)?)
+    get_conn_from_pool(pool)
 }
 
 pub fn get_conn_from_pool(pool: &DbPool) -> async_graphql::Result<DbConn> {
