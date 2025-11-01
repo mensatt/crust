@@ -209,7 +209,7 @@ impl ReviewMutations {
         // Pre-update accepted_at timestamp; will be set if review will be (un)approved
         let mut prev_accepted_at = None;
 
-        // If approval timestamp is set about to be modified, query review to see if status already
+        // If approval timestamp is about to be modified, query review to see if status already
         // matches expected value.
         // If so, do not change accepted_at (aka set it to None in the changeset)
         if let Some(expected_accepted_at) = changeset.accepted_at {
