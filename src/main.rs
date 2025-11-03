@@ -2,16 +2,16 @@ pub mod auth;
 pub mod config;
 pub mod db;
 pub mod graphql;
-pub mod schema;
 pub mod image_service;
+pub mod schema;
 
 use std::sync::Arc;
 
 use anyhow::Context;
 use async_graphql::{dataloader::DataLoader, http::GraphiQLSource, Schema};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLWebSocket, GraphQLProtocol};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
-    extract::{State, WebSocketUpgrade},
+    extract::State,
     http::{HeaderMap, Method},
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -112,24 +112,28 @@ async fn main() -> anyhow::Result<()> {
     let image_service_client = ImageServiceClient::new(config.image_service.clone());
 
     // Create GraphQL schema with dataloaders, DB pool, JWT keypair, config and subscription broker in its context
-    let schema: GqlSchema = Schema::build(Query::default(), Mutation::default(), Subscription::default())
-        .data(dish_loader)
-        .data(location_loader)
-        .data(occurrence_loader)
-        .data(review_loader)
-        .data(side_dish_loader)
-        .data(tag_loader)
-        .data(db_pool.clone())
-        .data(jwt_keypair.clone())
-        .data(subscription_broker.clone())
-        .data(image_service_client)
-        .data(config)
-        .finish();
+    let schema: GqlSchema = Schema::build(
+        Query::default(),
+        Mutation::default(),
+        Subscription::default(),
+    )
+    .data(dish_loader)
+    .data(location_loader)
+    .data(occurrence_loader)
+    .data(review_loader)
+    .data(side_dish_loader)
+    .data(tag_loader)
+    .data(db_pool.clone())
+    .data(jwt_keypair.clone())
+    .data(subscription_broker.clone())
+    .data(image_service_client)
+    .data(config)
+    .finish();
 
     let router = Router::new()
         .route("/", get(hello_world))
         .route("/graphql", post(graphql_handler))
-        .route("/graphql/ws", get(graphql_subscription_handler))
+        .route_service("/graphql/ws", GraphQLSubscription::new(schema.clone()))
         .route("/playground", get(graphiql).post(graphql_handler))
         .with_state(AppState {
             schema,
@@ -181,17 +185,6 @@ async fn graphql_handler(
         .execute(req.into_inner().data(AuthContext { claims }))
         .await
         .into()
-}
-
-async fn graphql_subscription_handler(
-    State(state): State<AppState>,
-    protocol: GraphQLProtocol,
-    websocket: WebSocketUpgrade,
-) -> impl IntoResponse {
-    websocket.on_upgrade(move |stream| {
-        GraphQLWebSocket::new(stream, state.schema, protocol)
-            .serve()
-    })
 }
 
 async fn graphiql(State(state): State<AppState>) -> impl IntoResponse {
