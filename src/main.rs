@@ -206,5 +206,5 @@ async fn graphiql(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn hello_world() -> &'static str {
-    "Hello world from axum server!"
+    "Hello world from mensatt backend!"
 }
