@@ -47,7 +47,7 @@ pub struct JwtConfig {
 impl Default for JwtConfig {
     fn default() -> Self {
         Self {
-            // Expect keys to be located in currrent directory by default
+            // Expect keys to be located in current directory by default
             private_key_path: "private_key.pem".to_string(),
             public_key_path: "public_key.pem".to_string(),
             lifetime_in_secs: 24 * 60 * 60, // Default JWT lifetime is one day
