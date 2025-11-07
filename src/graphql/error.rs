@@ -21,6 +21,9 @@ pub enum GqlApiError {
     // An error indicating that invalid (login) credentials were provided
     // Currently only used in loginUser mutation
     InvalidCredentials,
+    // An error indicating that invalid input was provided
+    // Currently only used in mergeDishes mutation
+    InvalidInput(String),
 }
 
 impl From<GqlApiError> for async_graphql::Error {
@@ -46,6 +49,10 @@ impl From<GqlApiError> for async_graphql::Error {
                 log::warn!("Failed login attempt (wrong credentials)!");
                 Error::new("Invalid email or password")
             }
+            GqlApiError::InvalidInput(msg) => {
+                log::warn!("Invalid input was provided: {}", msg);
+                Error::new(format!("Invalid input provided: {}", msg))
+            }
         }
     }
 }
@@ -64,5 +71,9 @@ impl GqlApiError {
 
     pub fn not_found<S: Into<String>>(msg: S) -> Self {
         GqlApiError::NotFound(msg.into())
+    }
+
+    pub fn invalid_input<S: Into<String>>(msg: S) -> Self {
+        GqlApiError::InvalidInput(msg.into())
     }
 }
