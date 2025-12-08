@@ -26,7 +26,7 @@ tower-http = { version = "0.6.6", features = ["cors"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-util = "0.3"
 # For SQL Stuff
-diesel = { version = "2.3.2", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.4", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
 diesel-derive-enum = { version = "3.0.0-beta.1", features = ["postgres"] } # For enum support
 diesel_migrations = { version = "2.3.0" } # For embedding migrations into executable
 bigdecimal = "0.4" # For handling PgNumeric of avg() queries
