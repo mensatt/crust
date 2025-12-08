@@ -28,7 +28,7 @@ futures-util = "0.3"
 # For SQL Stuff
 diesel = { version = "2.3.2", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
 diesel-derive-enum = { version = "3.0.0-beta.1", features = ["postgres"] } # For enum support
-diesel_migrations = { version = "2.3.0" } # For embedding migrations into executable
+diesel_migrations = { version = "2.3.1" } # For embedding migrations into executable
 bigdecimal = "0.4" # For handling PgNumeric of avg() queries
 # For building a standalone build (useful in Docker under alpine)
 pq-sys = { version = "0.7", features = ["bundled"] }
