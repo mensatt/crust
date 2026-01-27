@@ -15,7 +15,7 @@ argon2 = "0.5.3"
 # See if this can be removed once https://github.com/RustCrypto/password-hashes/issues/730 is closed
 rand_core = { version = "0.6", features = ["getrandom"] }
 # For GraphQL stuff
-async-graphql = { version = "7.0.17", features = ["uuid", "chrono", "dataloader"] }
+async-graphql = { version = "7.2.1", features = ["uuid", "chrono", "dataloader"] }
 async-graphql-axum = "7.0.17"
 # For HTTP Stuff
 axum = "0.8.6"      # HTTP Server
