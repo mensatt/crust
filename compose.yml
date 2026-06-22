@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17.4-alpine
+    image: postgres:18.4-alpine
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -9,7 +9,9 @@ services:
       POSTGRES_USER: mensatt
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?} # :? ensures value is set and non-empty
     volumes:
-      - ./postgres-data:/var/lib/postgresql/data/
+      # NOTE: Data from versions <= 17 needs to be migrated
+      # For more details see: https://github.com/docker-library/postgres/issues/37
+      - ./postgres-data:/var/lib/postgresql/
     # command: postgres -c config_file=/etc/postgresql/postgresql.conf
   mensatt:
     image: crust:latest
