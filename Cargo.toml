@@ -5,37 +5,37 @@ edition = "2021"
 
 [dependencies]
 # Misc
-uuid = "1.18.1"
-chrono = "0.4.42"
+uuid = "1.23.3"
+chrono = "0.4.45"
 serde = { version = "1.0.228", features = ["derive"] } # For (de)serializing data
 # Auth stuff
-jsonwebtoken = { version = "10.1.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
 argon2 = "0.5.3"
 # For password salts 
 # See if this can be removed once https://github.com/RustCrypto/password-hashes/issues/730 is closed
 rand_core = { version = "0.6", features = ["getrandom"] }
 # For GraphQL stuff
-async-graphql = { version = "7.0.17", features = ["uuid", "chrono", "dataloader"] }
-async-graphql-axum = "7.0.17"
+async-graphql = { version = "7.2.1", features = ["uuid", "chrono", "dataloader"] }
+async-graphql-axum = "7.2.1"
 # For HTTP Stuff
-axum = "0.8.6"      # HTTP Server
-reqwest = "0.12.24" # HTTP Client (for requests to image-service)
+axum = "0.8.9"      # HTTP Server
+reqwest = "0.13.4" # HTTP Client (for requests to image-service)
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6.6", features = ["cors"] }
+tower-http = { version = "0.7.0", features = ["cors"] }
 # For Websockets
-tokio-stream = { version = "0.1", features = ["sync"] }
-futures-util = "0.3"
+tokio-stream = { version = "0.1.18", features = ["sync"] }
+futures-util = "0.3.32"
 # For SQL Stuff
-diesel = { version = "2.3.2", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
+diesel = { version = "2.3.10", features = ["postgres", "postgres_backend", "uuid", "chrono", "r2d2", "numeric"] }
 diesel-derive-enum = { version = "3.0.0-beta.1", features = ["postgres"] } # For enum support
-diesel_migrations = { version = "2.3.0" } # For embedding migrations into executable
-bigdecimal = "0.4" # For handling PgNumeric of avg() queries
+diesel_migrations = { version = "2.3.2" } # For embedding migrations into executable
+bigdecimal = "0.4.10" # For handling PgNumeric of avg() queries
 # For building a standalone build (useful in Docker under alpine)
 pq-sys = { version = "0.7", features = ["bundled"] }
 openssl-sys = { version = "0.9", features = ["vendored"] }
 # Config Stuff
-config = "0.15.18"
+config = "0.15.24"
 # For Logging
-env_logger = "0.11.8"
-log = "0.4.28"
-anyhow = "1.0.100"
+env_logger = "0.11.10"
+log = "0.4.33"
+anyhow = "1.0.102"
