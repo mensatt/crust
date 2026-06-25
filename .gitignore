@@ -10,3 +10,6 @@ config.yml
 
 # Ignore IDE files
 .idea
+
+# Ignore Postgres Docker data
+postgres-data
