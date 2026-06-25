@@ -1,3 +1,4 @@
+mod dish_aliases;
 mod dishes;
 mod images;
 mod locations;
@@ -6,6 +7,7 @@ mod reviews;
 mod side_dishes;
 mod tags;
 
+pub use dish_aliases::DishAliasLoader;
 pub use dishes::DishLoader;
 pub use images::{ImageLoader, ImageLoaderKey};
 pub use locations::LocationLoader;

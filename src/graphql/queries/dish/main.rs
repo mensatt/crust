@@ -8,8 +8,8 @@ use crate::db::models::dish_alias::DbDishAlias;
 use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::ReviewFilter;
 use crate::graphql::util::get_conn_from_ctx;
-use crate::schema::{dishes, dishes_aliases};
-use crate::DishLoader;
+use crate::schema::dishes;
+use crate::{DishAliasLoader, DishLoader};
 
 use super::GqlReviewDataDish;
 
@@ -97,23 +97,23 @@ impl GqlDish {
     }
 
     async fn aliases(&self, ctx: &Context<'_>) -> Result<Vec<GqlDishAlias>> {
-        // Get DB connection
-        let conn = &mut get_conn_from_ctx(ctx)?;
+        let loader = ctx.data::<DataLoader<DishAliasLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get DishAliasLoader from context", e.message)
+        })?;
 
-        let results = dishes_aliases::table
-            .filter(dishes_aliases::dish.eq(self.id))
-            .select(DbDishAlias::as_select())
-            .load(conn)
+        let results = loader
+            .load_one(self.id)
+            .await
             .map_err(|e| {
-                // NOTE: load will not return NotFound, so no need to match on error here
                 GqlApiError::internal(
                     format!(
-                        "Error while fetching dish aliases for dish with ID '{}'",
+                        "Error while fetching dish aliases for dish with ID '{}' via alias loader",
                         self.id
                     ),
-                    e.to_string(),
+                    e.message,
                 )
-            })?;
+            })?
+            .unwrap_or_default();
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
