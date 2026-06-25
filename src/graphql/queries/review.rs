@@ -3,13 +3,11 @@ use async_graphql::{Context, InputObject, Result, SimpleObject};
 use diesel::prelude::*;
 use log::debug;
 
-use crate::db::models::image::DbImage;
 use crate::db::models::review::DbReview;
 use crate::graphql::error::GqlApiError;
 use crate::graphql::util::{get_conn_from_ctx, GqlTimestamp};
-use crate::schema::images;
 use crate::schema::reviews::dsl::*;
-use crate::OccurrenceLoader;
+use crate::{ImageLoader, OccurrenceLoader};
 
 use super::{GqlImage, GqlOccurrence};
 
@@ -58,22 +56,23 @@ impl GqlReview {
     }
 
     pub async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
-        // Get DB connection
-        let conn = &mut get_conn_from_ctx(ctx)?;
+        let loader = ctx.data::<DataLoader<ImageLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get ImageLoader from context", e.message)
+        })?;
 
-        let results = images::table
-            .select(DbImage::as_select())
-            .filter(images::review.eq(self.id))
-            .load(conn)
+        let results = loader
+            .load_one(self.id)
+            .await
             .map_err(|e| {
                 GqlApiError::internal(
                     format!(
-                        "Error while loading images for review with ID '{}'",
+                        "Error while loading images for review with ID '{}' via image loader",
                         self.id
                     ),
-                    e.to_string(),
+                    e.message,
                 )
-            })?;
+            })?
+            .unwrap_or_default();
 
         Ok(results.into_iter().map(Into::into).collect())
     }

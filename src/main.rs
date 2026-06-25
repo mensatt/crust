@@ -78,6 +78,12 @@ async fn main() -> anyhow::Result<()> {
         },
         tokio::spawn,
     );
+    let image_loader = DataLoader::new(
+        ImageLoader {
+            pool: db_pool.clone(),
+        },
+        tokio::spawn,
+    );
     let occurrence_loader = DataLoader::new(
         OccurrenceLoader {
             pool: db_pool.clone(),
@@ -118,6 +124,7 @@ async fn main() -> anyhow::Result<()> {
         Subscription::default(),
     )
     .data(dish_loader)
+    .data(image_loader)
     .data(location_loader)
     .data(occurrence_loader)
     .data(review_loader)
