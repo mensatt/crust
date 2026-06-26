@@ -7,7 +7,7 @@ use crate::db::models::review::DbReview;
 use crate::graphql::error::GqlApiError;
 use crate::graphql::util::{get_conn_from_ctx, GqlTimestamp};
 use crate::schema::reviews::dsl::*;
-use crate::{ImageLoader, OccurrenceLoader};
+use crate::{ImageLoader, ImageLoaderKey, OccurrenceLoader};
 
 use super::{GqlImage, GqlOccurrence};
 
@@ -61,7 +61,7 @@ impl GqlReview {
         })?;
 
         let results = loader
-            .load_one(self.id)
+            .load_one(ImageLoaderKey::ByReviewId { review_id: self.id })
             .await
             .map_err(|e| {
                 GqlApiError::internal(
@@ -72,7 +72,7 @@ impl GqlReview {
                     e.message,
                 )
             })?
-            .unwrap_or_default();
+            .unwrap_or_else(Vec::new);
 
         Ok(results.into_iter().map(Into::into).collect())
     }
