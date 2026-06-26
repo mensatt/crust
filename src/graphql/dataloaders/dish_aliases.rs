@@ -26,19 +26,17 @@ impl Loader<uuid::Uuid> for DishAliasLoader {
         // Get DB connection
         let conn = &mut get_conn_from_pool(&self.pool)?;
 
-        // Resolve alias(es) for the given dish id(s)
+        // Resolve dish alias(es) for the given dish id(s)
         let rows = dishes_aliases::table
             .filter(dishes_aliases::dish.eq_any(keys))
             .select(DbDishAlias::as_select())
             .load::<DbDishAlias>(conn)
-            .map_err(|e| {
-                GqlApiError::internal("Error while loading dish aliases", e.to_string())
-            })?;
+            .map_err(|e| GqlApiError::internal("Error while loading dish aliases", e.to_string()))?;
 
-        // Group aliases by their dish id
-        let mut map: HashMap<uuid::Uuid, Vec<DbDishAlias>> = HashMap::new();
+        // Group dish aliases by their dish id
+        let mut map = HashMap::new();
         for alias in rows {
-            map.entry(alias.dish).or_default().push(alias);
+            map.entry(alias.dish).or_insert_with(Vec::new).push(alias);
         }
         Ok(map)
     }

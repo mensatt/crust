@@ -107,13 +107,13 @@ impl GqlDish {
             .map_err(|e| {
                 GqlApiError::internal(
                     format!(
-                        "Error while fetching dish aliases for dish with ID '{}' via alias loader",
+                        "Error while fetching dish aliases for dish with ID '{}' via dish alias loader",
                         self.id
                     ),
                     e.message,
                 )
             })?
-            .unwrap_or_default();
+            .unwrap_or_else(Vec::new);
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
