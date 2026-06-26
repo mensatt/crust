@@ -39,7 +39,6 @@ impl ImageLoader {
         // Fetch all those ids from the DB
         let rows = images::table
             .filter(images::id.eq_any(&ids))
-            .select(DbImage::as_select())
             .load::<DbImage>(conn)
             .map_err(|e| {
                 GqlApiError::internal("Error while loading images by ID", e.to_string())
@@ -74,7 +73,6 @@ impl ImageLoader {
         // Fetch all images for those review ids from the DB
         let rows = images::table
             .filter(images::review.eq_any(&review_ids))
-            .select(DbImage::as_select())
             .load::<DbImage>(conn)
             .map_err(|e| {
                 GqlApiError::internal("Error while loading images by review ID", e.to_string())
@@ -110,8 +108,8 @@ impl ImageLoader {
         let occ_ids: Vec<uuid::Uuid> = keys.iter().map(|(id, _)| *id).collect();
 
         // Fetch images with those occurrence ids from DB (via their review)
-        let rows = reviews::table
-            .inner_join(images::table)
+        let rows = images::table
+            .inner_join(reviews::table)
             .filter(reviews::occurrence.eq_any(&occ_ids))
             .select((DbImage::as_select(), reviews::occurrence))
             .load::<(DbImage, uuid::Uuid)>(conn)
@@ -149,9 +147,9 @@ impl ImageLoader {
         let dish_ids: Vec<uuid::Uuid> = keys.iter().map(|(id, _)| *id).collect();
 
         // Fetch images with those dish ids from DB (via their review's occurrence)
-        let rows = reviews::table
+        let rows = images::table
+            .inner_join(reviews::table)
             .inner_join(occurrences::table)
-            .inner_join(images::table)
             .filter(occurrences::dish.eq_any(&dish_ids))
             .select((DbImage::as_select(), occurrences::dish))
             .load::<(DbImage, uuid::Uuid)>(conn)
