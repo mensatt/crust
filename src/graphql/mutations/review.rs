@@ -420,9 +420,7 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: AddImagesToReviewInput,
     ) -> Result<GqlReview> {
-        // Require authentication: this attaches images to an arbitrary existing review by ID,
-        // so it must not be reachable by anonymous callers. Anonymous image submission happens
-        // through create_review, which is scoped to an unapproved review being created.
+        // Require authentication for this mutation
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
@@ -490,8 +488,7 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: RemoveImagesFromReviewInput,
     ) -> Result<GqlReview> {
-        // Require authentication: deletion is destructive and removes images from the
-        // image service, so it must not be reachable by anonymous callers
+        // Require authentication for this mutation
         ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
