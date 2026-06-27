@@ -420,7 +420,8 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: AddImagesToReviewInput,
     ) -> Result<GqlReview> {
-        // NOTE: No auth on this mutation; all users shall be able to create reviews (with images)
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
         let conn = &mut get_conn_from_ctx(ctx)?;
@@ -487,8 +488,8 @@ impl ReviewMutations {
         ctx: &Context<'_>,
         input: RemoveImagesFromReviewInput,
     ) -> Result<GqlReview> {
-        // NOTE: This mutation was/is not authenticated in the old backend.
-        // TODO: Reconsider if this is sane
+        // Require authentication for this mutation
+        ctx.data::<AuthContext>()?.require_auth()?;
 
         // Get DB connection
         let conn = &mut get_conn_from_ctx(ctx)?;
