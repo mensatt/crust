@@ -31,7 +31,9 @@ impl Loader<uuid::Uuid> for DishAliasLoader {
             .filter(dishes_aliases::dish.eq_any(keys))
             .select(DbDishAlias::as_select())
             .load::<DbDishAlias>(conn)
-            .map_err(|e| GqlApiError::internal("Error while loading dish aliases", e.to_string()))?;
+            .map_err(|e| {
+                GqlApiError::internal("Error while loading dish aliases", e.to_string())
+            })?;
 
         // Group dish aliases by their dish id
         let mut map = HashMap::new();
