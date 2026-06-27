@@ -148,8 +148,7 @@ impl ImageLoader {
 
         // Fetch images with those dish ids from DB (via their review's occurrence)
         let rows = images::table
-            .inner_join(reviews::table)
-            .inner_join(occurrences::table)
+            .inner_join(reviews::table.inner_join(occurrences::table))
             .filter(occurrences::dish.eq_any(&dish_ids))
             .select((DbImage::as_select(), occurrences::dish))
             .load::<(DbImage, uuid::Uuid)>(conn)
