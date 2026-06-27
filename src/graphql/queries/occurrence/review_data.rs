@@ -107,7 +107,10 @@ impl GqlReviewDataOccurrence {
     }
 
     async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
-        debug!("Loading images for occurrence with ID '{}'", self.occurrence_id);
+        debug!(
+            "Loading images for occurrence with ID '{}'",
+            self.occurrence_id
+        );
         let loader = ctx.data::<DataLoader<ImageLoader>>().map_err(|e| {
             GqlApiError::internal("Unable to get ImageLoader from context", e.message)
         })?;
