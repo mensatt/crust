@@ -5,12 +5,11 @@ use diesel::prelude::*;
 use diesel::result::Error::NotFound;
 use log::debug;
 
-use crate::db::models::image::DbImage;
-use crate::graphql::dataloaders::{ReviewLoader, ReviewLoaderKey};
+use crate::graphql::dataloaders::{ImageLoader, ImageLoaderKey, ReviewLoader, ReviewLoaderKey};
 use crate::graphql::error::GqlApiError;
 use crate::graphql::queries::{GqlImage, GqlReview, ReviewFilter};
 use crate::graphql::util::get_conn_from_ctx;
-use crate::schema::{images, reviews};
+use crate::schema::reviews;
 
 #[derive(Debug, SimpleObject)]
 #[graphql(name = "ReviewMetadataOccurrence")]
@@ -108,25 +107,28 @@ impl GqlReviewDataOccurrence {
     }
 
     async fn images(&self, ctx: &Context<'_>) -> Result<Vec<GqlImage>> {
-        // Get DB connection
-        let conn = &mut get_conn_from_ctx(ctx)?;
-
-        // Fetch images for this occurrence_id from database
-        let results = reviews::table
-            .filter(reviews::occurrence.eq(self.occurrence_id))
-            .inner_join(images::table)
-            .select(DbImage::as_select())
-            .load::<DbImage>(conn)
+        debug!(
+            "Loading images for occurrence with ID '{}'",
+            self.occurrence_id
+        );
+        let loader = ctx.data::<DataLoader<ImageLoader>>().map_err(|e| {
+            GqlApiError::internal("Unable to get ImageLoader from context", e.message)
+        })?;
+        let results = loader
+            .load_one(ImageLoaderKey::ByOccurrenceId {
+                occurrence_id: self.occurrence_id,
+            })
+            .await
             .map_err(|e| {
                 GqlApiError::internal(
                     format!(
-                        "Error while loading review images of occurrence with ID '{}'",
+                        "Error while loading images for occurrence with ID '{}' via image loader",
                         self.occurrence_id
                     ),
-                    e.to_string(),
+                    e.message,
                 )
-            })?;
-
+            })?
+            .unwrap_or_else(Vec::new);
         Ok(results.into_iter().map(Into::into).collect())
     }
 }
