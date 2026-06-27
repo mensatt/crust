@@ -72,6 +72,12 @@ async fn main() -> anyhow::Result<()> {
         },
         tokio::spawn,
     );
+    let dish_alias_loader = DataLoader::new(
+        DishAliasLoader {
+            pool: db_pool.clone(),
+        },
+        tokio::spawn,
+    );
     let location_loader = DataLoader::new(
         LocationLoader {
             pool: db_pool.clone(),
@@ -124,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
         Subscription::default(),
     )
     .data(dish_loader)
+    .data(dish_alias_loader)
     .data(image_loader)
     .data(location_loader)
     .data(occurrence_loader)
