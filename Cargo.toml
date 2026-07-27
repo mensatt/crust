@@ -9,7 +9,7 @@ uuid = "1.23.3"
 chrono = "0.4.45"
 serde = { version = "1.0.228", features = ["derive"] } # For (de)serializing data
 # Auth stuff
-jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11.0.0", features = ["aws_lc_rs"] }
 argon2 = "0.5.3"
 # For password salts 
 # See if this can be removed once https://github.com/RustCrypto/password-hashes/issues/730 is closed
